@@ -1,0 +1,83 @@
+@import url("https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap");
+@import "tailwindcss";
+@config "../tailwind.config.js";
+@source "./src/**/*.{ts,tsx,js,jsx}", "./index.html";
+
+:root {
+  color-scheme: light;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 13%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 13%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 13%;
+  --primary: 198 87% 33%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 195 65% 53%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 195 65% 53%;
+  --accent-foreground: 0 0% 100%;
+  --border: 0 0% 91%;
+  --input: 0 0% 91%;
+  --ring: 198 87% 33%;
+  --radius: 12px;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 215 36% 9%;
+  --foreground: 0 0% 96%;
+  --card: 215 36% 9%;
+  --card-foreground: 0 0% 96%;
+  --popover: 215 36% 9%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 195 65% 53%;
+  --primary-foreground: 215 36% 9%;
+  --secondary: 198 87% 33%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 215 30% 15%;
+  --muted-foreground: 0 0% 80%;
+  --accent: 198 87% 33%;
+  --accent-foreground: 0 0% 98%;
+  --border: 215 25% 20%;
+  --input: 215 25% 20%;
+  --ring: 195 65% 53%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  font-feature-settings: "rlig" 1, "calt" 1;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+p {
+  color: hsl(var(--muted-foreground));
+}
+
+.glass-panel {
+  background-color: color-mix(
+    in srgb,
+    hsl(var(--card)) 90%,
+    transparent
+  );
+  backdrop-filter: blur(10px);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.08);
+}

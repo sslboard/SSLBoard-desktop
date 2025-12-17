@@ -1,50 +1,58 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import {
+  ShieldCheck,
+  Wand2,
+  Radar,
+  Settings as SettingsIcon,
+} from "lucide-react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AppShell } from "./components/layout/app-shell";
+import { ThemeProvider } from "./components/theme-provider";
+import { CertificatesPage } from "./pages/Certificates";
+import { IssuePage } from "./pages/Issue";
+import { DiscoverPage } from "./pages/Discover";
+import { SettingsPage } from "./pages/Settings";
+import type { NavItem } from "./components/layout/sidebar";
+
+const navItems: NavItem[] = [
+  {
+    label: "Certificates",
+    description: "Inventory and lifecycle insights.",
+    to: "/certificates",
+    icon: <ShieldCheck className="h-5 w-5" />,
+  },
+  {
+    label: "Issue",
+    description: "Start issuance and validation.",
+    to: "/issue",
+    icon: <Wand2 className="h-5 w-5" />,
+  },
+  {
+    label: "Discover",
+    description: "Find certs across infrastructure.",
+    to: "/discover",
+    icon: <Radar className="h-5 w-5" />,
+  },
+  {
+    label: "Settings",
+    description: "Configure providers and policies.",
+    to: "/settings",
+    icon: <SettingsIcon className="h-5 w-5" />,
+  },
+];
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <ThemeProvider>
+      <AppShell navItems={navItems}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/certificates" replace />} />
+          <Route path="/certificates" element={<CertificatesPage />} />
+          <Route path="/issue" element={<IssuePage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </AppShell>
+    </ThemeProvider>
   );
 }
 
