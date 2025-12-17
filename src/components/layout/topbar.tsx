@@ -1,6 +1,5 @@
 import { Menu, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
-import { Logo } from "../logo";
 
 type TopbarProps = {
   onMenuToggle: () => void;
