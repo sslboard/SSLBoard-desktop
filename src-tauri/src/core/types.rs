@@ -56,3 +56,36 @@ pub struct UpdateSecretRequest {
 }
 
 pub type SecretRefRecord = SecretMetadata;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IssuerEnvironment {
+    Staging,
+    Production,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuerConfigDto {
+    pub issuer_id: String,
+    pub label: String,
+    pub directory_url: String,
+    pub environment: IssuerEnvironment,
+    pub contact_email: Option<String>,
+    pub account_key_ref: Option<String>,
+    pub is_selected: bool,
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SelectIssuerRequest {
+    pub issuer_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnsureAcmeAccountRequest {
+    pub issuer_id: String,
+    pub contact_email: Option<String>,
+    pub account_key_ref: Option<String>,
+    #[serde(default)]
+    pub generate_new_account_key: bool,
+}

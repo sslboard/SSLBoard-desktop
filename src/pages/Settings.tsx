@@ -6,6 +6,8 @@ import {
   RefreshCw,
   Trash2,
   Plus,
+  Globe2,
+  AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "../components/page-header";
 import { Button } from "../components/ui/button";
@@ -19,9 +21,38 @@ import {
   listSecretRefs,
   updateSecretRef,
 } from "../lib/secrets";
+import {
+  ensureAcmeAccount,
+  listIssuers,
+  selectIssuer,
+  type EnsureAcmeAccountRequest,
+  type IssuerConfig,
+} from "../lib/issuers";
 import { cn } from "../lib/utils";
 
 type SecretFormState = CreateSecretRequest;
+const DEFAULT_ISSUERS: IssuerConfig[] = [
+  {
+    issuer_id: "acme_le_staging",
+    label: "Let's Encrypt (Staging)",
+    directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory",
+    environment: "staging",
+    contact_email: null,
+    account_key_ref: null,
+    is_selected: true,
+    disabled: false,
+  },
+  {
+    issuer_id: "acme_le_prod",
+    label: "Let's Encrypt (Production)",
+    directory_url: "https://acme-v02.api.letsencrypt.org/directory",
+    environment: "production",
+    contact_email: null,
+    account_key_ref: null,
+    is_selected: false,
+    disabled: true,
+  },
+];
 
 export function SettingsPage() {
   const [secrets, setSecrets] = useState<SecretRefRecord[]>([]);
@@ -37,12 +68,39 @@ export function SettingsPage() {
   const [rotateValue, setRotateValue] = useState("");
   const [rotateLabel, setRotateLabel] = useState("");
   const [rotating, setRotating] = useState(false);
+  const [issuers, setIssuers] = useState<IssuerConfig[]>([]);
+  const [issuerLoading, setIssuerLoading] = useState(false);
+  const [issuerError, setIssuerError] = useState<string | null>(null);
+  const [contactEmail, setContactEmail] = useState("");
+  const [accountKeyMode, setAccountKeyMode] = useState<"generate" | "existing">("generate");
+  const [accountKeyRef, setAccountKeyRef] = useState("");
+  const [ensuringAccount, setEnsuringAccount] = useState(false);
 
   useEffect(() => {
     void refresh();
+    void refreshIssuers();
   }, []);
 
   const hasSecrets = useMemo(() => secrets.length > 0, [secrets]);
+  const selectedIssuer = useMemo(
+    () => issuers.find((issuer) => issuer.is_selected),
+    [issuers],
+  );
+  const acmeAccountKeys = useMemo(
+    () => secrets.filter((s) => s.kind === "acme_account_key"),
+    [secrets],
+  );
+  const sandboxSelected = selectedIssuer?.environment === "staging";
+
+  useEffect(() => {
+    if (selectedIssuer?.contact_email) {
+      setContactEmail(selectedIssuer.contact_email);
+    }
+    if (selectedIssuer?.account_key_ref) {
+      setAccountKeyRef(selectedIssuer.account_key_ref);
+      setAccountKeyMode("existing");
+    }
+  }, [selectedIssuer]);
 
   async function refresh() {
     setLoading(true);
@@ -54,6 +112,20 @@ export function SettingsPage() {
       setError(normalizeError(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function refreshIssuers(force = false) {
+    if (issuerLoading && !force) return;
+    setIssuerLoading(true);
+    setIssuerError(null);
+    try {
+      const configs = await listIssuers();
+      setIssuers(configs.length === 0 ? DEFAULT_ISSUERS : configs);
+    } catch (err) {
+      setIssuerError(normalizeError(err));
+    } finally {
+      setIssuerLoading(false);
     }
   }
 
@@ -112,6 +184,66 @@ export function SettingsPage() {
     }
   }
 
+  async function handleSelectIssuer(issuerId: string) {
+    setIssuerError(null);
+    setIssuerLoading(true);
+    try {
+      const updated = await selectIssuer(issuerId);
+      setIssuers((prev) =>
+        prev.map((issuer) => ({
+          ...issuer,
+          is_selected: issuer.issuer_id === updated.issuer_id,
+        })),
+      );
+    } catch (err) {
+      setIssuerError(normalizeError(err));
+    } finally {
+      setIssuerLoading(false);
+    }
+  }
+
+  async function handleEnsureAccount(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedIssuer) {
+        setIssuerError("Select an issuer before saving.");
+        return;
+    }
+    setEnsuringAccount(true);
+    setIssuerError(null);
+
+    const payload: EnsureAcmeAccountRequest = {
+      issuer_id: selectedIssuer.issuer_id,
+      contact_email: contactEmail || undefined,
+      generate_new_account_key: accountKeyMode === "generate",
+    };
+
+    if (accountKeyMode === "existing") {
+      payload.account_key_ref = accountKeyRef || undefined;
+    }
+
+    try {
+      const updated = await ensureAcmeAccount(payload);
+      setIssuers((prev) =>
+        prev.map((issuer) =>
+          issuer.issuer_id === updated.issuer_id ? updated : issuer,
+        ),
+      );
+      if (updated.account_key_ref) {
+        setAccountKeyRef(updated.account_key_ref);
+      }
+      if (updated.contact_email) {
+        setContactEmail(updated.contact_email);
+      }
+      // Fire-and-forget refresh to avoid blocking the button state on IPC latency.
+      void refreshIssuers(true);
+      void refresh();
+    } catch (err) {
+      setIssuerError(normalizeError(err));
+    } finally {
+      setEnsuringAccount(false);
+    }
+  }
+
   function formatKind(kind: SecretKind) {
     switch (kind) {
       case "dns_credential":
@@ -122,6 +254,16 @@ export function SettingsPage() {
         return "Managed private key";
       default:
         return kind;
+    }
+  }
+
+  function formatEnvironment(env?: IssuerConfig["environment"]) {
+    switch (env) {
+      case "production":
+        return "Production";
+      case "staging":
+      default:
+        return "Sandbox";
     }
   }
 
@@ -149,6 +291,165 @@ export function SettingsPage() {
           {error}
         </div>
       ) : null}
+      {issuerError ? (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {issuerError}
+        </div>
+      ) : null}
+
+      {sandboxSelected ? (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-soft">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <div>
+            <div className="font-semibold">Sandbox issuer active</div>
+            <p className="text-[13px] text-amber-900/80">
+              Using Let&apos;s Encrypt staging. Safe for end-to-end testing without issuing real certificates.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border bg-card p-5 shadow-soft">
+        <div className="flex items-center gap-3">
+          <Globe2 className="h-5 w-5 text-primary" />
+          <div>
+            <div className="font-semibold">Issuer</div>
+            <p className="text-sm text-muted-foreground">
+              Choose the issuer and ACME account for issuance. Sandbox is the default and safest path.
+            </p>
+          </div>
+        </div>
+
+        <form className="mt-4 space-y-4" onSubmit={handleEnsureAccount}>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Issuer endpoint
+              </label>
+              <select
+                className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+                value={selectedIssuer?.issuer_id ?? ""}
+                onChange={(e) => void handleSelectIssuer(e.target.value)}
+              >
+                {issuers.map((issuer) => (
+                  <option
+                    key={issuer.issuer_id}
+                    value={issuer.issuer_id}
+                    disabled={issuer.disabled}
+                  >
+                    {issuer.label}
+                    {issuer.disabled ? " (coming soon)" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {selectedIssuer?.directory_url ?? "https://acme-staging-v02.api.letsencrypt.org/directory"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatEnvironment(selectedIssuer?.environment)} environment is highlighted above. Production is disabled for now.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                ACME contact email
+              </label>
+              <input
+                className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+                placeholder="you@example.com"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Used for ACME account registration and expiry notices.
+              </p>
+            </div>
+          </div>
+
+            <div className="rounded-lg border bg-background/60 p-4 shadow-inner">
+            {/** Account key selection. Dropdown is only interactive when using an existing ref. */}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  Account key
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Stored as a secret reference; UI never sees the key bytes.
+                </p>
+              </div>
+              {selectedIssuer?.account_key_ref ? (
+                <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium text-foreground/80">
+                  {selectedIssuer.account_key_ref}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="radio"
+                  className="h-4 w-4"
+                  checked={accountKeyMode === "generate"}
+                  onChange={() => setAccountKeyMode("generate")}
+                />
+                Generate a new staging account key (recommended)
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="radio"
+                  className="h-4 w-4"
+                checked={accountKeyMode === "existing"}
+                onChange={() => setAccountKeyMode("existing")}
+              />
+              Use an existing secret reference
+            </label>
+            {/** Disable the dropdown when generating a new key to make the state explicit. */}
+            <select
+                className={cn(
+                  "w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50",
+                  accountKeyMode !== "existing" && "cursor-not-allowed opacity-50"
+                )}
+                value={accountKeyRef}
+                onChange={(e) => setAccountKeyRef(e.target.value)}
+                disabled={accountKeyMode !== "existing"}
+              >
+                <option value="">
+                  {acmeAccountKeys.length === 0
+                    ? "No ACME account keys yet"
+                    : "Select an ACME account key"}
+                </option>
+                {acmeAccountKeys.map((secret) => (
+                  <option key={secret.id} value={secret.id}>
+                    {secret.label || secret.id} ({secret.id})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Create a secret reference below first if you want to import your own key.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="submit"
+              className="gap-2"
+              disabled={ensuringAccount || issuerLoading}
+            >
+              {ensuringAccount ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Save issuer &amp; ensure account
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              Sandbox is safe for testing; production remains locked until explicitly enabled.
+            </p>
+          </div>
+        </form>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr,1fr]">
         <div className="rounded-xl border bg-card p-5 shadow-soft">

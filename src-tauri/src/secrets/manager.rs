@@ -75,6 +75,12 @@ impl SecretManager {
             label,
             created_at: Utc::now(),
         };
+        eprintln!(
+            "[secrets] create_secret kind={} id={} label={}",
+            record.kind.as_str(),
+            record.id,
+            record.label
+        );
 
         if let Err(err) = self.metadata.insert(&record) {
             // Best-effort cleanup to avoid orphaned keyring entries if metadata persistence fails.
@@ -121,6 +127,13 @@ impl SecretManager {
         self.store.delete(id)?;
         self.metadata
             .delete(id)
+            .map_err(|err| SecretError::Metadata(err.to_string()))
+    }
+
+    pub fn get_metadata(&self, id: &str) -> Result<Option<SecretMetadata>, SecretError> {
+        self.ensure_prefix(id)?;
+        self.metadata
+            .get(id)
             .map_err(|err| SecretError::Metadata(err.to_string()))
     }
 
