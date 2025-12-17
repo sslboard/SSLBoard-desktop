@@ -4,12 +4,12 @@ mod secrets;
 mod storage;
 
 use core::commands::{
-    create_secret_ref, delete_secret_ref, get_certificate, greet, list_certificates,
-    list_issuers, list_secret_refs, seed_fake_certificate, select_issuer, update_secret_ref,
-    ensure_acme_account,
+    create_secret_ref, delete_secret_ref, get_certificate, greet, list_certificates, list_issuers,
+    list_secret_refs, seed_fake_certificate, select_issuer, update_secret_ref, ensure_acme_account,
+    prepare_dns_challenge, check_dns_propagation,
 };
 use secrets::manager::SecretManager;
-use storage::{inventory::InventoryStore, issuer::IssuerConfigStore};
+use storage::{inventory::InventoryStore, issuer::IssuerConfigStore, dns::DnsConfigStore};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +29,9 @@ pub fn run() {
 
             let issuer_store = IssuerConfigStore::initialize(app.handle().clone())?;
             app.manage(issuer_store);
+
+            let dns_store = DnsConfigStore::initialize(app.handle().clone())?;
+            app.manage(dns_store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -42,7 +45,9 @@ pub fn run() {
             delete_secret_ref,
             list_issuers,
             select_issuer,
-            ensure_acme_account
+            ensure_acme_account,
+            prepare_dns_challenge,
+            check_dns_propagation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

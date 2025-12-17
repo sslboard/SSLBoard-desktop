@@ -31,28 +31,6 @@ import {
 import { cn } from "../lib/utils";
 
 type SecretFormState = CreateSecretRequest;
-const DEFAULT_ISSUERS: IssuerConfig[] = [
-  {
-    issuer_id: "acme_le_staging",
-    label: "Let's Encrypt (Staging)",
-    directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory",
-    environment: "staging",
-    contact_email: null,
-    account_key_ref: null,
-    is_selected: true,
-    disabled: false,
-  },
-  {
-    issuer_id: "acme_le_prod",
-    label: "Let's Encrypt (Production)",
-    directory_url: "https://acme-v02.api.letsencrypt.org/directory",
-    environment: "production",
-    contact_email: null,
-    account_key_ref: null,
-    is_selected: false,
-    disabled: true,
-  },
-];
 
 export function SettingsPage() {
   const [secrets, setSecrets] = useState<SecretRefRecord[]>([]);
@@ -121,7 +99,7 @@ export function SettingsPage() {
     setIssuerError(null);
     try {
       const configs = await listIssuers();
-      setIssuers(configs.length === 0 ? DEFAULT_ISSUERS : configs);
+      setIssuers(configs);
     } catch (err) {
       setIssuerError(normalizeError(err));
     } finally {
@@ -205,8 +183,8 @@ export function SettingsPage() {
   async function handleEnsureAccount(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!selectedIssuer) {
-        setIssuerError("Select an issuer before saving.");
-        return;
+      setIssuerError("Select an issuer before saving.");
+      return;
     }
     setEnsuringAccount(true);
     setIssuerError(null);
@@ -272,12 +250,12 @@ export function SettingsPage() {
     return Number.isNaN(date.getTime())
       ? "—"
       : date.toLocaleString(undefined, {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
   }
 
   return (
@@ -367,7 +345,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-            <div className="rounded-lg border bg-background/60 p-4 shadow-inner">
+          <div className="rounded-lg border bg-background/60 p-4 shadow-inner">
             {/** Account key selection. Dropdown is only interactive when using an existing ref. */}
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -399,13 +377,13 @@ export function SettingsPage() {
                 <input
                   type="radio"
                   className="h-4 w-4"
-                checked={accountKeyMode === "existing"}
-                onChange={() => setAccountKeyMode("existing")}
-              />
-              Use an existing secret reference
-            </label>
-            {/** Disable the dropdown when generating a new key to make the state explicit. */}
-            <select
+                  checked={accountKeyMode === "existing"}
+                  onChange={() => setAccountKeyMode("existing")}
+                />
+                Use an existing secret reference
+              </label>
+              {/** Disable the dropdown when generating a new key to make the state explicit. */}
+              <select
                 className={cn(
                   "w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50",
                   accountKeyMode !== "existing" && "cursor-not-allowed opacity-50"

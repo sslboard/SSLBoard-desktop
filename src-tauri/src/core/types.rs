@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::secrets::types::{SecretKind, SecretMetadata};
+use crate::issuance::dns::{DnsRecordInstruction, DnsPropagationResult, PropagationState};
 
 /// Represents the source of a certificate record, indicating whether it was
 /// discovered externally or is managed by the application.
@@ -89,3 +90,23 @@ pub struct EnsureAcmeAccountRequest {
     #[serde(default)]
     pub generate_new_account_key: bool,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PrepareDnsChallengeRequest {
+    pub domain: String,
+    pub txt_value: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PreparedDnsChallenge {
+    pub record: DnsRecordInstruction,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckPropagationRequest {
+    pub domain: String,
+    pub txt_value: String,
+}
+
+pub type PropagationDto = DnsPropagationResult;
+pub type PropagationStateDto = PropagationState;

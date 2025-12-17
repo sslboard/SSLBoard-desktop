@@ -4,10 +4,15 @@ use crate::{
     core::types::{
         CertificateRecord, CreateSecretRequest, EnsureAcmeAccountRequest, IssuerConfigDto,
         IssuerEnvironment, SecretRefRecord, SelectIssuerRequest, UpdateSecretRequest,
+        PrepareDnsChallengeRequest, PreparedDnsChallenge, CheckPropagationRequest,
+        PropagationDto,
     },
-    issuance::acme::AcmeIssuer,
+    issuance::{
+        acme::AcmeIssuer,
+        dns::{DnsAdapter, DnsChallengeRequest, ManualDnsAdapter},
+    },
     secrets::manager::SecretManager,
-    storage::{inventory::InventoryStore, issuer::IssuerConfigStore},
+    storage::{inventory::InventoryStore, issuer::IssuerConfigStore, dns::DnsConfigStore},
 };
 /// A simple greeting command for testing the Tauri-Rust bridge.
 /// This command demonstrates basic string processing and command invocation.
@@ -211,6 +216,47 @@ pub async fn ensure_acme_account(
     })
     .await
     .map_err(|err| format!("Ensure account join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Computes manual DNS instructions for a DNS-01 challenge.
+#[tauri::command]
+pub async fn prepare_dns_challenge(
+    store: State<'_, DnsConfigStore>,
+    req: PrepareDnsChallengeRequest,
+) -> Result<PreparedDnsChallenge, String> {
+    let store = store.inner().clone();
+    spawn_blocking(move || -> Result<PreparedDnsChallenge, anyhow::Error> {
+        let adapter = ManualDnsAdapter::new();
+        let mapping = store.find_for_hostname(&req.domain)?;
+        let challenge = DnsChallengeRequest {
+            domain: req.domain.clone(),
+            value: req.txt_value.clone(),
+            zone: mapping.and_then(|m| m.zone),
+        };
+        let record = adapter.present_txt(&challenge)?;
+        Ok(PreparedDnsChallenge { record })
+    })
+    .await
+    .map_err(|err| format!("Prepare DNS join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Checks TXT record propagation for a DNS-01 challenge.
+#[tauri::command]
+pub async fn check_dns_propagation(req: CheckPropagationRequest) -> Result<PropagationDto, String> {
+    spawn_blocking(move || -> Result<PropagationDto, anyhow::Error> {
+        let adapter = ManualDnsAdapter::new();
+        let challenge = DnsChallengeRequest {
+            domain: req.domain.clone(),
+            value: req.txt_value.clone(),
+            zone: None,
+        };
+        let result = adapter.check_propagation(&challenge)?;
+        Ok(result)
+    })
+    .await
+    .map_err(|err| format!("Propagation join error: {err}"))?
     .map_err(|err: anyhow::Error| err.to_string())
 }
 

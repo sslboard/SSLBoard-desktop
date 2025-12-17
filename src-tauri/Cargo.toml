@@ -50,6 +50,7 @@ tokio = { version = "1", features = ["full"] }
 
 # HTTP client for DNS provider APIs
 reqwest = { version = "0.12", features = ["json"] }
+ureq = "2.10"
 
 # Error handling
 thiserror = "1.0"
