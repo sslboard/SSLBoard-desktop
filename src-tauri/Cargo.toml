@@ -58,3 +58,5 @@ anyhow = "1.0"
 # Time/date handling for certificate expiry, audit logs
 chrono = { version = "0.4", features = ["serde"] }
 
+# IDs for secret references
+uuid = { version = "1", features = ["v4", "fast-rng", "serde"] }

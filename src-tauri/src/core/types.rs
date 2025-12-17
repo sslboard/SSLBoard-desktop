@@ -1,25 +1,58 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::secrets::types::{SecretKind, SecretMetadata};
+
+/// Represents the source of a certificate record, indicating whether it was
+/// discovered externally or is managed by the application.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CertificateSource {
+    /// Certificate was discovered from external sources (e.g., system certificate stores)
     External,
+    /// Certificate is managed and tracked by this application
     Managed,
 }
 
+/// Represents a complete certificate record with all metadata and validation information.
+/// This structure is used for storing, retrieving, and displaying SSL/TLS certificate data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertificateRecord {
+    /// Unique identifier for the certificate record
     pub id: String,
     /// Canonical subjects or SAN entries associated with the certificate.
     pub subjects: Vec<String>,
     /// Subject Alternative Names; for now mirrors `subjects` for clarity in the UI.
     pub sans: Vec<String>,
+    /// Certificate issuer information (e.g., "Let's Encrypt Authority X3")
     pub issuer: String,
+    /// Certificate serial number as a hex string
     pub serial: String,
+    /// Certificate validity start date
     pub not_before: DateTime<Utc>,
+    /// Certificate validity end date
     pub not_after: DateTime<Utc>,
+    /// Certificate fingerprint (SHA-256 hash) for uniqueness verification
     pub fingerprint: String,
+    /// Source of this certificate record
     pub source: CertificateSource,
+    /// Root domains extracted from subjects/SANs (e.g., ["example.com"])
     pub domain_roots: Vec<String>,
+    /// User-defined tags for organization and filtering
     pub tags: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSecretRequest {
+    pub label: String,
+    pub kind: SecretKind,
+    pub secret_value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSecretRequest {
+    pub id: String,
+    pub secret_value: String,
+    pub label: Option<String>,
+}
+
+pub type SecretRefRecord = SecretMetadata;

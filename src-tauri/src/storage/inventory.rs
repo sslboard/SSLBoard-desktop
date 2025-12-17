@@ -1,3 +1,9 @@
+//! Certificate inventory storage module.
+//!
+//! This module provides persistent storage for SSL/TLS certificate records
+//! using SQLite as the backend. It handles certificate metadata storage,
+//! retrieval, and basic inventory management operations.
+
 use std::{
     fs,
     sync::{Arc, Mutex, MutexGuard},
@@ -10,12 +16,33 @@ use tauri::{AppHandle, Manager};
 
 use crate::core::types::{CertificateRecord, CertificateSource};
 
+/// SQLite-based storage for certificate inventory data.
+/// Provides thread-safe access to certificate records with CRUD operations.
+///
+/// The store uses a single SQLite database file stored in the application's
+/// data directory. All operations are protected by a mutex to ensure
+/// thread safety across async operations.
 #[derive(Clone)]
 pub struct InventoryStore {
     conn: Arc<Mutex<Connection>>,
 }
 
 impl InventoryStore {
+    /// Creates and initializes a new inventory store instance.
+    ///
+    /// This method sets up the SQLite database in the application's data directory,
+    /// configures connection settings for optimal performance and safety,
+    /// and initializes the database schema if it doesn't exist.
+    ///
+    /// # Arguments
+    /// * `app` - Tauri application handle for accessing the data directory
+    ///
+    /// # Returns
+    /// A Result containing the initialized InventoryStore or an error
+    ///
+    /// # Errors
+    /// Returns an error if the app data directory cannot be resolved,
+    /// the database file cannot be created/opened, or schema initialization fails.
     pub fn initialize(app: AppHandle) -> Result<Self> {
         let data_dir = app
             .path()
@@ -40,6 +67,16 @@ impl InventoryStore {
         })
     }
 
+    /// Configures SQLite connection settings for optimal performance and safety.
+    ///
+    /// Sets up Write-Ahead Logging (WAL) mode for better concurrent access
+    /// and enables foreign key constraints for data integrity.
+    ///
+    /// # Arguments
+    /// * `conn` - The SQLite connection to configure
+    ///
+    /// # Returns
+    /// A Result indicating success or failure of configuration
     fn configure_connection(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             r#"
@@ -50,6 +87,17 @@ impl InventoryStore {
         Ok(())
     }
 
+    /// Initializes the database schema if it doesn't already exist.
+    ///
+    /// Creates the certificate_records table with all necessary columns
+    /// for storing certificate metadata. Uses IF NOT EXISTS to avoid
+    /// errors on subsequent runs.
+    ///
+    /// # Arguments
+    /// * `conn` - The SQLite connection to initialize
+    ///
+    /// # Returns
+    /// A Result indicating success or failure of schema creation
     fn init_schema(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             r#"
@@ -71,6 +119,16 @@ impl InventoryStore {
         Ok(())
     }
 
+    /// Retrieves all certificate records from the inventory.
+    ///
+    /// Returns all certificate records ordered by expiration date (newest first).
+    /// This provides a complete view of all tracked certificates.
+    ///
+    /// # Returns
+    /// A Result containing a vector of all CertificateRecord instances or an error
+    ///
+    /// # Errors
+    /// Returns an error if the database query fails or record deserialization fails
     pub fn list_certificates(&self) -> Result<Vec<CertificateRecord>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
@@ -89,6 +147,19 @@ impl InventoryStore {
         Ok(records)
     }
 
+    /// Retrieves a specific certificate record by its unique ID.
+    ///
+    /// Looks up a single certificate record in the database using its ID.
+    /// Returns None if no certificate with the given ID exists.
+    ///
+    /// # Arguments
+    /// * `id` - The unique identifier of the certificate to retrieve
+    ///
+    /// # Returns
+    /// A Result containing Some(CertificateRecord) if found, None if not found, or an error
+    ///
+    /// # Errors
+    /// Returns an error if the database query fails or record deserialization fails
     pub fn get_certificate(&self, id: &str) -> Result<Option<CertificateRecord>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
@@ -107,11 +178,35 @@ impl InventoryStore {
         }
     }
 
+    /// Inserts or replaces a certificate record in the inventory.
+    ///
+    /// Stores a certificate record in the database. If a record with the same ID
+    /// already exists, it will be replaced (upsert behavior).
+    ///
+    /// # Arguments
+    /// * `record` - The certificate record to insert
+    ///
+    /// # Returns
+    /// A Result indicating success or failure of the insertion
+    ///
+    /// # Errors
+    /// Returns an error if the database operation fails or serialization fails
     pub fn insert_certificate(&self, record: &CertificateRecord) -> Result<()> {
         let mut conn = self.lock_conn()?;
         Self::insert_with_conn(&mut conn, record)
     }
 
+    /// Seeds the database with a sample development certificate.
+    ///
+    /// Inserts a fake certificate record for development and testing purposes.
+    /// Only adds the sample certificate if the inventory is currently empty.
+    /// This helps with UI development and testing without requiring real certificates.
+    ///
+    /// # Returns
+    /// A Result indicating success or failure of the seeding operation
+    ///
+    /// # Errors
+    /// Returns an error if the database operation fails or if insertion fails
     pub fn seed_dev_certificate(&self) -> Result<()> {
         let mut conn = self.lock_conn()?;
         let count: i64 = conn.query_row("SELECT COUNT(1) FROM certificate_records", [], |row| {
@@ -146,6 +241,20 @@ impl InventoryStore {
         Self::insert_with_conn(&mut conn, &sample)
     }
 
+    /// Inserts a certificate record using an existing database connection.
+    ///
+    /// Internal helper method that performs the actual database insertion.
+    /// Serializes complex fields (vectors) to JSON for storage.
+    ///
+    /// # Arguments
+    /// * `conn` - Mutable reference to the SQLite connection
+    /// * `record` - The certificate record to insert
+    ///
+    /// # Returns
+    /// A Result indicating success or failure of the insertion
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails or the database operation fails
     fn insert_with_conn(conn: &mut Connection, record: &CertificateRecord) -> Result<()> {
         conn.execute(
             r#"
@@ -173,6 +282,20 @@ impl InventoryStore {
         Ok(())
     }
 
+    /// Converts a database row into a CertificateRecord struct.
+    ///
+    /// Deserializes JSON fields and parses timestamps from RFC3339 format.
+    /// Handles conversion from database column types to Rust types.
+    ///
+    /// # Arguments
+    /// * `row` - The SQLite row to convert
+    ///
+    /// # Returns
+    /// A Result containing the deserialized CertificateRecord or an error
+    ///
+    /// # Errors
+    /// Returns an error if deserialization fails, timestamp parsing fails,
+    /// or unknown enum values are encountered
     fn row_to_record(row: &Row<'_>) -> Result<CertificateRecord> {
         let id: String = row.get(0)?;
         let subjects_raw: String = row.get(1)?;
@@ -216,6 +339,16 @@ impl InventoryStore {
         })
     }
 
+    /// Acquires a lock on the database connection for thread-safe access.
+    ///
+    /// Returns a mutex guard that provides exclusive access to the SQLite connection.
+    /// This ensures thread safety when performing database operations.
+    ///
+    /// # Returns
+    /// A Result containing a MutexGuard for the connection or an error if the mutex is poisoned
+    ///
+    /// # Errors
+    /// Returns an error if the mutex has been poisoned by a previous panic
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
         self.conn
             .lock()
