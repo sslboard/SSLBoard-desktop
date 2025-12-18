@@ -9,6 +9,11 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Row};
 use tauri::{AppHandle, Manager};
 
+#[cfg(windows)]
+extern "system" {
+    fn SetFileAttributesW(path: *const u16, attributes: u32) -> i32;
+}
+
 use super::types::SecretMetadata;
 
 #[derive(Clone)]
@@ -101,7 +106,38 @@ impl SecretMetadataStore {
     }
 
     #[cfg(not(unix))]
-    fn enforce_permissions(_db_path: &PathBuf, _created: bool) -> Result<()> {
+    fn enforce_permissions(db_path: &PathBuf, _created: bool) -> Result<()> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+
+            const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+            const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x20;
+            const FILE_ATTRIBUTE_NOT_CONTENT_INDEXED: u32 = 0x2000;
+
+            let wide: Vec<u16> = db_path
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+
+            unsafe {
+                if SetFileAttributesW(
+                    wide.as_ptr(),
+                    FILE_ATTRIBUTE_HIDDEN
+                        | FILE_ATTRIBUTE_ARCHIVE
+                        | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
+                ) == 0
+                {
+                    eprintln!(
+                        "[secrets] warning: failed to harden Windows file attributes for {}: {}",
+                        db_path.display(),
+                        std::io::Error::last_os_error()
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 

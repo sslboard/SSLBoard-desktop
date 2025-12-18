@@ -124,6 +124,7 @@ export function SettingsPage() {
       setError(normalizeError(err));
     } finally {
       setSaving(false);
+      setFormState((prev) => ({ ...prev, secret_value: "" }));
     }
   }
 
@@ -159,6 +160,7 @@ export function SettingsPage() {
       setError(normalizeError(err));
     } finally {
       setRotating(false);
+      setRotateValue("");
     }
   }
 
@@ -518,7 +520,7 @@ export function SettingsPage() {
                         </label>
                         <input
                           type="password"
-                          autoComplete="new-password"
+                          autoComplete="off"
                           required
                           className="mt-2 w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
                           placeholder="Paste token or key material (kept in Rust only)"
@@ -623,7 +625,7 @@ export function SettingsPage() {
               </label>
               <input
                 type="password"
-                autoComplete="new-password"
+                autoComplete="off"
                 className="w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
                 placeholder="Paste token or key material. It is sent into Rust only once."
                 value={formState.secret_value}

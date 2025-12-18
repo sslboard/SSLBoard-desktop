@@ -11,6 +11,8 @@ use super::{
     types::{SecretKind, SecretMetadata},
     vault::MasterKeyVault,
 };
+use tauri::Emitter;
+use zeroize::Zeroizing;
 
 #[derive(thiserror::Error, Debug)]
 pub enum SecretError {
@@ -45,6 +47,7 @@ pub struct SecretManager {
     metadata: SecretMetadataStore,
     vault: Arc<MasterKeyVault>,
     legacy_store: Arc<KeyringSecretStore>,
+    app: tauri::AppHandle,
     prefix: String,
 }
 
@@ -62,6 +65,7 @@ impl SecretManager {
             metadata,
             vault,
             legacy_store,
+            app: app.clone(),
             prefix: "sec_".to_string(),
         };
 
@@ -83,6 +87,7 @@ impl SecretManager {
         secret_value: String,
     ) -> Result<SecretMetadata, SecretError> {
         self.ensure_unlocked()?;
+        let secret_bytes = Zeroizing::new(secret_value.into_bytes());
         let id = self.generate_ref();
 
         let record = SecretMetadata {
@@ -102,7 +107,7 @@ impl SecretManager {
             .insert(&record)
             .map_err(|err| SecretError::Metadata(err.to_string()))?;
 
-        if let Err(err) = self.store_secret(&record.id, secret_value.as_bytes()) {
+        if let Err(err) = self.store_secret(&record.id, &secret_bytes) {
             let _ = self.metadata.delete(&record.id);
             return Err(err);
         }
@@ -118,6 +123,7 @@ impl SecretManager {
     ) -> Result<SecretMetadata, SecretError> {
         self.ensure_prefix(id)?;
         self.ensure_unlocked()?;
+        let secret_bytes = Zeroizing::new(secret_value.into_bytes());
         let Some(existing) = self
             .metadata
             .get(id)
@@ -126,7 +132,7 @@ impl SecretManager {
             return Err(SecretError::NotFound(id.to_string()));
         };
 
-        self.store_secret(id, secret_value.as_bytes())?;
+        self.store_secret(id, &secret_bytes)?;
 
         if let Some(ref new_label) = label {
             self.metadata
@@ -167,11 +173,14 @@ impl SecretManager {
     }
 
     pub fn unlock(&self) -> Result<(), SecretError> {
-        self.vault.unlock().map_err(Into::into)
+        self.vault.unlock().map_err(SecretError::from)?;
+        self.emit_vault_state(true);
+        Ok(())
     }
 
     pub fn lock(&self) {
         self.vault.lock();
+        self.emit_vault_state(false);
     }
 
     pub fn is_unlocked(&self) -> bool {
@@ -201,12 +210,15 @@ impl SecretManager {
 
     fn ensure_unlocked(&self) -> Result<(), SecretError> {
         if self.vault.is_unlocked() {
-            Ok(())
-        } else {
-            Err(SecretError::Locked(
-                "vault is locked; call unlock first".into(),
-            ))
+            return Ok(());
         }
+        self.vault.unlock().map_err(|err| match err {
+            SecretStoreError::Unavailable(msg) => SecretError::Unavailable(msg),
+            SecretStoreError::Locked(msg) => SecretError::Locked(msg),
+            _ => SecretError::Store(err.to_string()),
+        })?;
+        self.emit_vault_state(true);
+        Ok(())
     }
 
     fn migrate_legacy_secrets(&self) -> Result<()> {
@@ -225,7 +237,8 @@ impl SecretManager {
                 }
                 match self.legacy_store.retrieve(&record.id) {
                     Ok(bytes) => {
-                        self.store_secret(&record.id, &bytes)?;
+                        let secret = Zeroizing::new(bytes);
+                        self.store_secret(&record.id, &secret)?;
                         if let Err(err) = self.legacy_store.delete(&record.id) {
                             eprintln!(
                                 "[secrets] warning: failed to delete legacy keyring entry {}: {}",
@@ -254,6 +267,7 @@ impl SecretManager {
 
         let result = migration();
         self.vault.lock();
+        self.emit_vault_state(false);
         result
     }
 
@@ -263,6 +277,13 @@ impl SecretManager {
             SecretStoreError::NotFound(_) => SecretError::NotFound(id.to_string()),
             SecretStoreError::Store(msg) => SecretError::Store(msg),
             SecretStoreError::Locked(msg) => SecretError::Locked(msg),
+        }
+    }
+
+    fn emit_vault_state(&self, unlocked: bool) {
+        let payload = serde_json::json!({ "unlocked": unlocked });
+        if let Err(err) = self.app.emit("vault-state-changed", payload) {
+            eprintln!("[secrets] failed to emit vault state: {err}");
         }
     }
 }
