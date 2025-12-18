@@ -67,14 +67,6 @@ impl SecretManager {
 
         manager.migrate_legacy_secrets()?;
 
-        if let Err(err) = manager.vault.unlock() {
-            eprintln!(
-                "[secrets] warning: failed to unlock vault on startup, staying locked: {err}"
-            );
-        } else {
-            eprintln!("[secrets] vault unlocked on startup");
-        }
-
         Ok(manager)
     }
 

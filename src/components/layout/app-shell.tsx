@@ -19,20 +19,14 @@ export function AppShell({ navItems, children }: AppShellProps) {
     const boot = async () => {
       setVaultBusy(true);
       try {
-        const status = await unlockVault();
+        const status = await isVaultUnlocked();
         if (!cancelled) {
           setVaultUnlocked(status);
         }
       } catch (err) {
-        console.error("Failed to unlock vault on startup", err);
+        console.error("Failed to check vault status on startup", err);
         if (!cancelled) {
-          try {
-            const status = await isVaultUnlocked();
-            setVaultUnlocked(status);
-          } catch (statusErr) {
-            console.error("Failed to check vault status", statusErr);
-            setVaultUnlocked(false);
-          }
+          setVaultUnlocked(false);
         }
       } finally {
         if (!cancelled) {

@@ -303,33 +303,48 @@ pub async fn complete_managed_issuance(
 /// Unlocks the secret vault, loading the master key into memory.
 #[tauri::command]
 pub async fn unlock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {
+    eprintln!(
+        "[vault-cmd] unlock_vault called, is_unlocked={}",
+        manager.is_unlocked()
+    );
     let manager = manager.inner().clone();
-    spawn_blocking(move || manager.unlock())
+    let result = spawn_blocking(move || manager.unlock())
         .await
         .map_err(|err| format!("Unlock vault join error: {err}"))?
         .map(|_| true)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string());
+    eprintln!("[vault-cmd] unlock_vault result={:?}", result);
+    result
 }
 
 /// Locks the secret vault, zeroizing the cached master key.
 #[tauri::command]
 pub async fn lock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {
+    eprintln!(
+        "[vault-cmd] lock_vault called, is_unlocked={}",
+        manager.is_unlocked()
+    );
     let manager = manager.inner().clone();
-    spawn_blocking(move || {
+    let result = spawn_blocking(move || {
         manager.lock();
         Ok(false)
     })
     .await
-    .map_err(|err| format!("Lock vault join error: {err}"))?
+    .map_err(|err| format!("Lock vault join error: {err}"))?;
+    eprintln!("[vault-cmd] lock_vault result={:?}", result);
+    result
 }
 
 /// Returns whether the vault is currently unlocked.
 #[tauri::command]
 pub async fn is_vault_unlocked(manager: State<'_, SecretManager>) -> Result<bool, String> {
+    eprintln!("[vault-cmd] is_vault_unlocked called");
     let manager = manager.inner().clone();
-    spawn_blocking(move || Ok(manager.is_unlocked()))
+    let result = spawn_blocking(move || Ok(manager.is_unlocked()))
         .await
-        .map_err(|err| format!("Vault status join error: {err}"))?
+        .map_err(|err| format!("Vault status join error: {err}"))?;
+    eprintln!("[vault-cmd] is_vault_unlocked result={:?}", result);
+    result
 }
 
 fn issuer_record_to_dto(record: crate::storage::issuer::IssuerConfigRecord) -> IssuerConfigDto {

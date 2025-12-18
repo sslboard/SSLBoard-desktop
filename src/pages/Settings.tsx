@@ -516,7 +516,9 @@ export function SettingsPage() {
                         <label className="text-sm font-medium text-foreground">
                           New secret value
                         </label>
-                        <textarea
+                        <input
+                          type="password"
+                          autoComplete="new-password"
                           required
                           className="mt-2 w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
                           placeholder="Paste token or key material (kept in Rust only)"
@@ -619,7 +621,9 @@ export function SettingsPage() {
               <label className="text-sm font-medium text-foreground">
                 Secret value
               </label>
-              <textarea
+              <input
+                type="password"
+                autoComplete="new-password"
                 className="w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
                 placeholder="Paste token or key material. It is sent into Rust only once."
                 value={formState.secret_value}

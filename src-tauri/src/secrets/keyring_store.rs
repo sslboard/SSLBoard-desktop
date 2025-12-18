@@ -64,19 +64,31 @@ impl MasterKeyStore {
     }
 
     pub fn get_or_create(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
+        eprintln!("[keyring] get_or_create called");
         match self.get() {
-            Ok(key) => Ok(key),
-            Err(SecretStoreError::NotFound(_)) => self.create(),
-            Err(err) => Err(err),
+            Ok(key) => {
+                eprintln!("[keyring] get_or_create: found existing key");
+                Ok(key)
+            }
+            Err(SecretStoreError::NotFound(_)) => {
+                eprintln!("[keyring] get_or_create: no key found, creating new");
+                self.create()
+            }
+            Err(err) => {
+                eprintln!("[keyring] get_or_create: error={}", err);
+                Err(err)
+            }
         }
     }
 
     pub fn get(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
+        eprintln!("[keyring] get: fetching master key from keyring...");
         let entry =
             Entry::new(&self.service, &self.user).map_err(|err| map_error(&self.user, err))?;
         let value = entry
             .get_password()
             .map_err(|err| map_error(&self.user, err))?;
+        eprintln!("[keyring] get: keyring access complete");
         let decoded = general_purpose::STANDARD
             .decode(value.as_bytes())
             .map_err(|err| {
@@ -86,15 +98,18 @@ impl MasterKeyStore {
     }
 
     pub fn create(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
+        eprintln!("[keyring] create: generating new master key...");
         let mut key_bytes = vec![0u8; 32];
         OsRng.fill_bytes(&mut key_bytes);
         let encoded = general_purpose::STANDARD.encode(&key_bytes);
 
         let entry =
             Entry::new(&self.service, &self.user).map_err(|err| map_error(&self.user, err))?;
+        eprintln!("[keyring] create: storing key in keyring...");
         entry
             .set_password(&encoded)
             .map_err(|err| map_error(&self.user, err))?;
+        eprintln!("[keyring] create: keyring access complete");
 
         Ok(Zeroizing::new(key_bytes))
     }
