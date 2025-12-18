@@ -14,6 +14,8 @@ export type CertificateRecord = {
   source: CertificateSource;
   domain_roots: string[];
   tags: string[];
+  managed_key_ref?: string | null;
+  chain_pem?: string | null;
 };
 
 export async function listCertificates(): Promise<CertificateRecord[]> {

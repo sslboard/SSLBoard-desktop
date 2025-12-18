@@ -2,12 +2,12 @@
 
 ## Why
 - Deliver end-to-end issuance so users can obtain a real sandbox certificate with DNS-01 validation.
-- Support both managed-key and CSR-import paths while keeping secrets in the Rust core.
+- Support managed-key issuance while keeping secrets in the Rust core. CSR import will follow later.
 
 ## What Changes
-- Add a multi-step issuance wizard (domains → key mode → DNS-01 → finalize) that surfaces DNS instructions and success state.
+- Add a multi-step issuance wizard (domains → DNS-01 → finalize) that surfaces DNS instructions and success state.
 - Implement Rust orchestration to start ACME orders, handle manual DNS propagation checks, and finalize/download the chain.
-- Support both key-generation (SecretStore-backed) and CSR-import flows, persisting issued certificate metadata as Managed.
+- Support managed key-generation (SecretStore-backed), persisting issued certificate metadata as Managed.
 
 ## Impact
 - Affected specs: certificate-issuance

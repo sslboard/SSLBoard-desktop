@@ -40,6 +40,10 @@ pub struct CertificateRecord {
     pub domain_roots: Vec<String>,
     /// User-defined tags for organization and filtering
     pub tags: Vec<String>,
+    /// Optional managed key reference if the private key is stored locally
+    pub managed_key_ref: Option<String>,
+    /// PEM-encoded certificate chain for export
+    pub chain_pem: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,3 +114,19 @@ pub struct CheckPropagationRequest {
 
 pub type PropagationDto = DnsPropagationResult;
 pub type PropagationStateDto = PropagationState;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StartIssuanceRequest {
+    pub domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StartIssuanceResponse {
+    pub request_id: String,
+    pub dns_records: Vec<DnsRecordInstruction>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompleteIssuanceRequest {
+    pub request_id: String,
+}

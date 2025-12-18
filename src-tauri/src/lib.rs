@@ -6,7 +6,7 @@ mod storage;
 use core::commands::{
     create_secret_ref, delete_secret_ref, get_certificate, greet, list_certificates, list_issuers,
     list_secret_refs, seed_fake_certificate, select_issuer, update_secret_ref, ensure_acme_account,
-    prepare_dns_challenge, check_dns_propagation,
+    prepare_dns_challenge, check_dns_propagation, start_managed_issuance, complete_managed_issuance,
 };
 use secrets::manager::SecretManager;
 use storage::{inventory::InventoryStore, issuer::IssuerConfigStore, dns::DnsConfigStore};
@@ -47,7 +47,9 @@ pub fn run() {
             select_issuer,
             ensure_acme_account,
             prepare_dns_challenge,
-            check_dns_propagation
+            check_dns_propagation,
+            start_managed_issuance,
+            complete_managed_issuance
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

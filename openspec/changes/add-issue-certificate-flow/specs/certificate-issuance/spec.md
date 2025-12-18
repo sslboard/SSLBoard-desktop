@@ -1,18 +1,11 @@
 ## ADDED Requirements
 
-### Requirement: Issuance wizard with key-mode selection
-The UI SHALL provide an issuance wizard that collects domain/SAN inputs, lets the user choose between generating a new key or importing a CSR, guides through DNS-01 validation, and displays a completion state.
+### Requirement: Issuance wizard for managed-key issuance
+The UI SHALL provide an issuance wizard that collects domain/SAN inputs for a managed-key issuance path, guides through DNS-01 validation, and displays a completion state.
 
 #### Scenario: Wizard collects inputs and drives DNS-01
 - **WHEN** the user starts issuance
-- **THEN** the wizard SHALL prompt for domains/SANs, key mode (generate vs CSR), present DNS-01 instructions, and proceed to finalize once DNS is satisfied
-
-### Requirement: CSR import validation
-The system SHALL accept a CSR file for issuance, parse its SANs/common name, and reject the CSR if the requested names are empty, unsupported, or mismatched with the issuance request.
-
-#### Scenario: CSR SANs drive the order
-- **WHEN** the user selects the CSR path and uploads a CSR
-- **THEN** the system SHALL extract SANs (or CN fallback), use them as the order names, and surface an error if parsing fails or names are missing
+- **THEN** the wizard SHALL prompt for domains/SANs, present DNS-01 instructions, and proceed to finalize once DNS is satisfied
 
 ### Requirement: Managed-key generation path
 The system SHALL support a managed-key issuance path that generates a private key in the trusted Rust core, stores it as a `SecretStore` reference, and uses it to create the CSR without exposing key material to the UI.

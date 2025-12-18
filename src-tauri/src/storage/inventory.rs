@@ -61,6 +61,7 @@ impl InventoryStore {
 
         Self::configure_connection(&conn)?;
         Self::init_schema(&conn)?;
+        Self::migrate_schema(&conn)?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -112,10 +113,38 @@ impl InventoryStore {
                 fingerprint TEXT NOT NULL,
                 source TEXT NOT NULL,
                 domain_roots TEXT NOT NULL,
-                tags TEXT NOT NULL
+                tags TEXT NOT NULL,
+                managed_key_ref TEXT,
+                chain_pem TEXT
             );
             "#,
         )?;
+        Ok(())
+    }
+
+    /// Applies lightweight schema migrations for new columns.
+    fn migrate_schema(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(certificate_records)")?;
+        let mut rows = stmt.query([])?;
+        let mut existing = Vec::new();
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            existing.push(name);
+        }
+        if !existing.iter().any(|c| c == "managed_key_ref") {
+            conn.execute(
+                "ALTER TABLE certificate_records ADD COLUMN managed_key_ref TEXT",
+                [],
+            )
+            .context("failed to add managed_key_ref column")?;
+        }
+        if !existing.iter().any(|c| c == "chain_pem") {
+            conn.execute(
+                "ALTER TABLE certificate_records ADD COLUMN chain_pem TEXT",
+                [],
+            )
+            .context("failed to add chain_pem column")?;
+        }
         Ok(())
     }
 
@@ -133,7 +162,7 @@ impl InventoryStore {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags
+            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
             FROM certificate_records
             ORDER BY not_after DESC
             "#,
@@ -164,7 +193,7 @@ impl InventoryStore {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags
+            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
             FROM certificate_records
             WHERE id = ?1
             "#,
@@ -236,6 +265,8 @@ impl InventoryStore {
             source: CertificateSource::Managed,
             domain_roots: vec!["sslboard.test".to_string()],
             tags: vec!["demo".to_string(), "sandbox".to_string()],
+            managed_key_ref: None,
+            chain_pem: None,
         };
 
         Self::insert_with_conn(&mut conn, &sample)
@@ -259,8 +290,8 @@ impl InventoryStore {
         conn.execute(
             r#"
             INSERT OR REPLACE INTO certificate_records (
-                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             "#,
             params![
                 record.id,
@@ -277,6 +308,8 @@ impl InventoryStore {
                 },
                 serde_json::to_string(&record.domain_roots)?,
                 serde_json::to_string(&record.tags)?,
+                record.managed_key_ref,
+                record.chain_pem,
             ],
         )?;
         Ok(())
@@ -308,6 +341,8 @@ impl InventoryStore {
         let source_raw: String = row.get(8)?;
         let domain_roots_raw: String = row.get(9)?;
         let tags_raw: String = row.get(10)?;
+        let managed_key_ref: Option<String> = row.get(11).unwrap_or(None);
+        let chain_pem: Option<String> = row.get(12).unwrap_or(None);
 
         let source = match source_raw.as_str() {
             "External" => CertificateSource::External,
@@ -336,6 +371,8 @@ impl InventoryStore {
             domain_roots: serde_json::from_str(&domain_roots_raw)
                 .context("failed to deserialize domain_roots")?,
             tags: serde_json::from_str(&tags_raw).context("failed to deserialize tags")?,
+            managed_key_ref,
+            chain_pem,
         })
     }
 
