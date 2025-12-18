@@ -2,10 +2,10 @@ use tauri::{async_runtime::spawn_blocking, State};
 
 use crate::{
     core::types::{
-        CertificateRecord, CreateSecretRequest, EnsureAcmeAccountRequest, IssuerConfigDto,
-        IssuerEnvironment, SecretRefRecord, SelectIssuerRequest, UpdateSecretRequest,
-        PrepareDnsChallengeRequest, PreparedDnsChallenge, CheckPropagationRequest,
-        PropagationDto, StartIssuanceRequest, StartIssuanceResponse, CompleteIssuanceRequest,
+        CertificateRecord, CheckPropagationRequest, CompleteIssuanceRequest, CreateSecretRequest,
+        EnsureAcmeAccountRequest, IssuerConfigDto, IssuerEnvironment, PrepareDnsChallengeRequest,
+        PreparedDnsChallenge, PropagationDto, SecretRefRecord, SelectIssuerRequest,
+        StartIssuanceRequest, StartIssuanceResponse, UpdateSecretRequest,
     },
     issuance::{
         acme::AcmeIssuer,
@@ -13,7 +13,7 @@ use crate::{
         flow::{complete_managed_dns01, start_managed_dns01},
     },
     secrets::manager::SecretManager,
-    storage::{inventory::InventoryStore, issuer::IssuerConfigStore, dns::DnsConfigStore},
+    storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
 };
 /// A simple greeting command for testing the Tauri-Rust bridge.
 /// This command demonstrates basic string processing and command invocation.
@@ -273,11 +273,12 @@ pub async fn start_managed_issuance(
     let dns_store = dns_store.inner().clone();
     let secrets = secrets.inner().clone();
     spawn_blocking(move || {
-        start_managed_dns01(req.domains, &issuer_store, &dns_store, &secrets)
-            .map(|(request_id, dns_records)| StartIssuanceResponse {
+        start_managed_dns01(req.domains, &issuer_store, &dns_store, &secrets).map(
+            |(request_id, dns_records)| StartIssuanceResponse {
                 request_id,
                 dns_records,
-            })
+            },
+        )
     })
     .await
     .map_err(|err| format!("Start issuance join error: {err}"))?
@@ -297,6 +298,38 @@ pub async fn complete_managed_issuance(
         .await
         .map_err(|err| format!("Complete issuance join error: {err}"))?
         .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Unlocks the secret vault, loading the master key into memory.
+#[tauri::command]
+pub async fn unlock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {
+    let manager = manager.inner().clone();
+    spawn_blocking(move || manager.unlock())
+        .await
+        .map_err(|err| format!("Unlock vault join error: {err}"))?
+        .map(|_| true)
+        .map_err(|err| err.to_string())
+}
+
+/// Locks the secret vault, zeroizing the cached master key.
+#[tauri::command]
+pub async fn lock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {
+    let manager = manager.inner().clone();
+    spawn_blocking(move || {
+        manager.lock();
+        Ok(false)
+    })
+    .await
+    .map_err(|err| format!("Lock vault join error: {err}"))?
+}
+
+/// Returns whether the vault is currently unlocked.
+#[tauri::command]
+pub async fn is_vault_unlocked(manager: State<'_, SecretManager>) -> Result<bool, String> {
+    let manager = manager.inner().clone();
+    spawn_blocking(move || Ok(manager.is_unlocked()))
+        .await
+        .map_err(|err| format!("Vault status join error: {err}"))?
 }
 
 fn issuer_record_to_dto(record: crate::storage::issuer::IssuerConfigRecord) -> IssuerConfigDto {

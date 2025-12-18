@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::issuance::dns::{DnsPropagationResult, DnsRecordInstruction, PropagationState};
 use crate::secrets::types::{SecretKind, SecretMetadata};
-use crate::issuance::dns::{DnsRecordInstruction, DnsPropagationResult, PropagationState};
 
 /// Represents the source of a certificate record, indicating whether it was
 /// discovered externally or is managed by the application.

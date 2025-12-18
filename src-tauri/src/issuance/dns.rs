@@ -87,7 +87,9 @@ impl ManualDnsAdapter {
                     if let Ok(body) = resp.into_string() {
                         match serde_json::from_str::<GoogleDnsResponse>(&body) {
                             Ok(parsed) => results.push(parsed),
-                            Err(err) => eprintln!("[dns] parse failed for {record_name} via {url}: {err}"),
+                            Err(err) => {
+                                eprintln!("[dns] parse failed for {record_name} via {url}: {err}")
+                            }
                         }
                     }
                 }
@@ -97,12 +99,13 @@ impl ManualDnsAdapter {
             }
         }
         if results.is_empty() {
-            Err(anyhow!("dns query failed for {record_name} across resolvers"))
+            Err(anyhow!(
+                "dns query failed for {record_name} across resolvers"
+            ))
         } else {
             Ok(results)
         }
     }
-
 }
 
 impl DnsAdapter for ManualDnsAdapter {
@@ -112,10 +115,7 @@ impl DnsAdapter for ManualDnsAdapter {
 
     fn present_txt(&self, req: &DnsChallengeRequest) -> Result<DnsRecordInstruction> {
         let record_name = Self::record_name(&req.domain);
-        let zone = req
-            .zone
-            .clone()
-            .unwrap_or_else(|| derive_zone(&req.domain));
+        let zone = req.zone.clone().unwrap_or_else(|| derive_zone(&req.domain));
         Ok(DnsRecordInstruction {
             adapter: self.id().to_string(),
             record_name,
@@ -142,11 +142,7 @@ impl DnsAdapter for ManualDnsAdapter {
 }
 
 fn trim_txt_quotes(value: &str) -> String {
-    value
-        .trim_matches('"')
-        .trim_matches(' ')
-        .trim()
-        .to_string()
+    value.trim_matches('"').trim_matches(' ').trim().to_string()
 }
 
 fn derive_zone(hostname: &str) -> String {
@@ -195,7 +191,10 @@ fn interpret_dns_results(
             saw_ok = true;
         }
         if response.status != 0 && response.status != 3 {
-            eprintln!("[dns] unexpected status {} for {}", response.status, req.domain);
+            eprintln!(
+                "[dns] unexpected status {} for {}",
+                response.status, req.domain
+            );
         }
     }
 
@@ -238,7 +237,6 @@ fn interpret_dns_results(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,7 +259,9 @@ mod tests {
         }];
         let result = interpret_dns_results(&responses, &make_req());
         assert!(matches!(result.state, PropagationState::Found));
-        assert!(result.observed_values.contains(&"expected-value".to_string()));
+        assert!(result
+            .observed_values
+            .contains(&"expected-value".to_string()));
     }
 
     #[test]

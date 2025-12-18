@@ -43,3 +43,15 @@ export async function updateSecretRef(
 export async function deleteSecretRef(id: string): Promise<void> {
   return invoke("delete_secret_ref", { id });
 }
+
+export async function unlockVault(): Promise<boolean> {
+  return invoke<boolean>("unlock_vault");
+}
+
+export async function lockVault(): Promise<boolean> {
+  return invoke<boolean>("lock_vault");
+}
+
+export async function isVaultUnlocked(): Promise<boolean> {
+  return invoke<boolean>("is_vault_unlocked");
+}

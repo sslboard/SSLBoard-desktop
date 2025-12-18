@@ -39,6 +39,10 @@ pkcs12 = "0.1"  # PFX/PKCS#12 export for Windows
 
 # Secret storage (OS keychain adapters)
 keyring = "2.3"  # Cross-platform: macOS Keychain, Windows Credential Vault, Linux Secret Service
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+zeroize = "1.7"
 
 # Kubernetes client for distribution
 kube = { version = "0.92", features = ["runtime", "client"] }

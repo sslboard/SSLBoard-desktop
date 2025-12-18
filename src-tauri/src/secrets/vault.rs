@@ -1,0 +1,81 @@
+use std::sync::{Arc, PoisonError, RwLock};
+
+use zeroize::{Zeroize, Zeroizing};
+
+use super::{keyring_store::MasterKeyStore, store::SecretStoreError};
+
+pub trait SecretVault: Send + Sync {
+    fn is_unlocked(&self) -> bool;
+    fn unlock(&self) -> Result<(), SecretStoreError>;
+    fn lock(&self);
+}
+
+/// Caches the master key in memory and provides explicit lock/unlock control.
+#[derive(Clone)]
+pub struct MasterKeyVault {
+    store: MasterKeyStore,
+    cached: Arc<RwLock<Option<Zeroizing<Vec<u8>>>>>,
+}
+
+impl MasterKeyVault {
+    pub fn new(store: MasterKeyStore) -> Self {
+        Self {
+            store,
+            cached: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub fn is_unlocked(&self) -> bool {
+        self.cached
+            .read()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false)
+    }
+
+    pub fn unlock(&self) -> Result<(), SecretStoreError> {
+        let key = self.store.get_or_create()?;
+        let mut guard = self.cached.write().map_err(map_poison)?;
+        if let Some(mut existing) = guard.take() {
+            existing.zeroize();
+        }
+        *guard = Some(key);
+        Ok(())
+    }
+
+    pub fn lock(&self) {
+        if let Ok(mut guard) = self.cached.write() {
+            if let Some(mut key) = guard.take() {
+                key.zeroize();
+            }
+        }
+    }
+
+    pub fn with_key<T, F>(&self, f: F) -> Result<T, SecretStoreError>
+    where
+        F: FnOnce(&[u8]) -> Result<T, SecretStoreError>,
+    {
+        let guard = self.cached.read().map_err(map_poison)?;
+        let key = guard
+            .as_ref()
+            .ok_or_else(|| SecretStoreError::Locked("vault is locked".into()))?;
+        f(key)
+    }
+}
+
+impl SecretVault for MasterKeyVault {
+    fn is_unlocked(&self) -> bool {
+        MasterKeyVault::is_unlocked(self)
+    }
+
+    fn unlock(&self) -> Result<(), SecretStoreError> {
+        MasterKeyVault::unlock(self)
+    }
+
+    fn lock(&self) {
+        MasterKeyVault::lock(self)
+    }
+}
+
+fn map_poison<T>(err: PoisonError<T>) -> SecretStoreError {
+    SecretStoreError::Store(format!("vault state poisoned: {err}"))
+}

@@ -4,15 +4,15 @@ use std::{
 };
 
 use acme_lib::{
-    create_rsa_key, Directory, DirectoryUrl,
+    create_rsa_key,
     order::{Auth, NewOrder},
     persist::{Persist, PersistKey, PersistKind},
-    Certificate, Error as AcmeError,
+    Certificate, Directory, DirectoryUrl, Error as AcmeError,
 };
 use anyhow::{anyhow, Result};
 use chrono::{TimeZone, Utc};
-use uuid::Uuid;
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 use x509_parser::pem::parse_x509_pem;
 
 use crate::{
@@ -41,13 +41,19 @@ impl EphemeralPersist {
 
 impl Persist for EphemeralPersist {
     fn put(&self, key: &PersistKey, value: &[u8]) -> acme_lib::Result<()> {
-        let mut lock = self.inner.lock().map_err(|e| AcmeError::Other(e.to_string()))?;
+        let mut lock = self
+            .inner
+            .lock()
+            .map_err(|e| AcmeError::Other(e.to_string()))?;
         lock.insert(key.to_string(), value.to_vec());
         Ok(())
     }
 
     fn get(&self, key: &PersistKey) -> acme_lib::Result<Option<Vec<u8>>> {
-        let lock = self.inner.lock().map_err(|e| AcmeError::Other(e.to_string()))?;
+        let lock = self
+            .inner
+            .lock()
+            .map_err(|e| AcmeError::Other(e.to_string()))?;
         Ok(lock.get(&key.to_string()).cloned())
     }
 }
@@ -109,11 +115,9 @@ pub fn start_managed_dns01(
     let persist = EphemeralPersist::new();
     persist.seed_account_key(&contact_email, account_key_pem.as_bytes())?;
 
-    let directory = Directory::from_url(
-        persist.clone(),
-        DirectoryUrl::Other(&issuer.directory_url),
-    )
-    .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
+    let directory =
+        Directory::from_url(persist.clone(), DirectoryUrl::Other(&issuer.directory_url))
+            .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
     let account = directory
         .account_with_realm(
             &contact_email,
@@ -167,7 +171,11 @@ pub fn start_managed_dns01(
         .map_err(|_| anyhow!("managed key PEM contained invalid UTF-8"))?;
     let key_label = format!("Managed key for {}", primary);
     let managed_key = secrets
-        .create_secret(SecretKind::ManagedPrivateKey, key_label, key_pem_str.clone())
+        .create_secret(
+            SecretKind::ManagedPrivateKey,
+            key_label,
+            key_pem_str.clone(),
+        )
         .map_err(|e| anyhow!(e.to_string()))?;
 
     let request_id = Uuid::new_v4().to_string();
@@ -205,9 +213,7 @@ pub fn complete_managed_dns01(
         managed_key_pem,
     } = pending;
 
-    let auths = order
-        .authorizations()
-        .map_err(|e| anyhow!(e.to_string()))?;
+    let auths = order.authorizations().map_err(|e| anyhow!(e.to_string()))?;
     for auth in auths {
         let dns = auth.dns_challenge();
         dns.validate(2000).map_err(|e| anyhow!(e.to_string()))?;
@@ -277,10 +283,7 @@ fn build_record(
         not_after,
         fingerprint,
         source: CertificateSource::Managed,
-        domain_roots: domains
-            .iter()
-            .map(|d| root_from_hostname(d))
-            .collect(),
+        domain_roots: domains.iter().map(|d| root_from_hostname(d)).collect(),
         tags: vec![],
         chain_pem: Some(pem.to_string()),
         managed_key_ref: Some(managed_key_ref),

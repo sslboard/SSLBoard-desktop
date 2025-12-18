@@ -82,11 +82,7 @@ impl<'a> AcmeIssuer<'a> {
                         .map_err(|err| AcmeIssuerError::KeyGeneration(err.to_string()))?;
                     let record = self
                         .secrets
-                        .create_secret(
-                            SecretKind::AcmeAccountKey,
-                            "ACME account key".into(),
-                            pem,
-                        )
+                        .create_secret(SecretKind::AcmeAccountKey, "ACME account key".into(), pem)
                         .map_err(AcmeIssuerError::from)?;
                     eprintln!(
                         "[acme_issuer] regenerated account key ref {} (persisted ref missing/invalid)",

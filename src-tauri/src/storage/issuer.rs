@@ -258,12 +258,7 @@ impl IssuerConfigStore {
                 tos_agreed, is_selected, disabled, created_at, updated_at
             ) VALUES (?1, ?2, ?3, 'production', NULL, NULL, 0, 0, 1, ?4, ?4)
             "#,
-            params![
-                Self::PROD_ID,
-                "Let's Encrypt (Production)",
-                prod_url,
-                now
-            ],
+            params![Self::PROD_ID, "Let's Encrypt (Production)", prod_url, now],
         )?;
 
         // Ensure at least one issuer is marked selected.

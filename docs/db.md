@@ -89,13 +89,13 @@ Maps hostname patterns to DNS zones and their authentication credentials for DNS
 
 ## Database: `secrets.sqlite`
 
-**Purpose**: Stores metadata about secrets managed by the application. Actual secret data is stored in the OS keyring, not in SQLite.
+**Purpose**: Stores metadata and encrypted secret ciphertext. The master encryption key lives in the OS keyring; the database holds only AES-256-GCM ciphertext.
 
 **Location**: `{app_data_dir}/secrets.sqlite`
 
 ### Table: `secret_metadata`
 
-Stores non-sensitive metadata about secrets stored in the OS keyring.
+Stores non-sensitive metadata about secrets plus encrypted ciphertext.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -103,6 +103,7 @@ Stores non-sensitive metadata about secrets stored in the OS keyring.
 | `kind` | TEXT | NOT NULL | Type of secret (see below) |
 | `label` | TEXT | NOT NULL | Human-readable name for the secret |
 | `created_at` | TEXT | NOT NULL | When the secret was created (ISO 8601 datetime) |
+| `ciphertext` | BLOB | NULL | AES-256-GCM payload stored as `nonce || ciphertext || tag` |
 
 **Secret Kinds**:
 - `dns_credential` - DNS provider API credentials
@@ -114,6 +115,7 @@ Stores non-sensitive metadata about secrets stored in the OS keyring.
 - UI display of available secrets
 - Secret lifecycle tracking
 - Reference validation
+- AES-256-GCM ciphertext storage for secret values (nonce prepended; master key in OS keyring)
 
 ## Database Relationships
 
