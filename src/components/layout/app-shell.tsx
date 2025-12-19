@@ -165,10 +165,8 @@ export function AppShell({ navItems, children }: AppShellProps) {
           onToggleVault={toggleVault}
         />
         <main className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(11,113,157,0.08),transparent_45%),radial-gradient(circle_at_80%_20%,_rgba(59,175,213,0.08),transparent_35%)] px-4 pb-8 pt-4 sm:px-6 lg:px-10">
-          <div className="mx-auto max-w-6xl">
-            <div className="glass-panel rounded-2xl p-6 sm:p-8">
-              {children}
-            </div>
+          <div className="mx-4">
+            {children}
           </div>
         </main>
       </div>

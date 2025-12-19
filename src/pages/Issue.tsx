@@ -124,7 +124,7 @@ export function IssuePage() {
             </p>
           </div>
           <div className="hidden rounded-lg border bg-muted px-3 py-2 text-xs text-muted-foreground sm:block">
-            UI stays unprivileged — secrets never leave Rust.
+            Your private key stays on your machine, encrypted at rest.
           </div>
         </div>
 

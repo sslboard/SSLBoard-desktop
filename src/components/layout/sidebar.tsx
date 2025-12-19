@@ -45,9 +45,6 @@ export function Sidebar({ items, onNavigate }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
-      <div className="rounded-lg border bg-muted px-3 py-2 text-xs text-muted-foreground">
-        UI is unprivileged. Secrets are never shown here.
-      </div>
     </aside>
   );
 }
