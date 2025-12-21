@@ -70,13 +70,21 @@ pub enum IssuerEnvironment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IssuerType {
+    Acme,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssuerConfigDto {
     pub issuer_id: String,
     pub label: String,
     pub directory_url: String,
     pub environment: IssuerEnvironment,
+    pub issuer_type: IssuerType,
     pub contact_email: Option<String>,
     pub account_key_ref: Option<String>,
+    pub tos_agreed: bool,
     pub is_selected: bool,
     pub disabled: bool,
 }
@@ -87,12 +95,34 @@ pub struct SelectIssuerRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct EnsureAcmeAccountRequest {
-    pub issuer_id: String,
+pub struct CreateIssuerRequest {
+    pub label: String,
+    pub issuer_type: IssuerType,
+    pub environment: IssuerEnvironment,
+    pub directory_url: String,
     pub contact_email: Option<String>,
-    pub account_key_ref: Option<String>,
-    #[serde(default)]
-    pub generate_new_account_key: bool,
+    pub tos_agreed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateIssuerRequest {
+    pub issuer_id: String,
+    pub label: String,
+    pub environment: IssuerEnvironment,
+    pub directory_url: String,
+    pub contact_email: Option<String>,
+    pub tos_agreed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetIssuerDisabledRequest {
+    pub issuer_id: String,
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeleteIssuerRequest {
+    pub issuer_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -118,6 +148,7 @@ pub type PropagationStateDto = PropagationState;
 #[derive(Debug, Clone, Deserialize)]
 pub struct StartIssuanceRequest {
     pub domains: Vec<String>,
+    pub issuer_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

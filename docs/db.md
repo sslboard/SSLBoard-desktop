@@ -60,6 +60,8 @@ Stores ACME account configurations for different Certificate Authorities.
 | `label` | TEXT | NOT NULL | Human-readable name for the issuer |
 | `directory_url` | TEXT | NOT NULL | ACME directory URL (e.g., "https://acme-v02.api.letsencrypt.org/directory") |
 | `environment` | TEXT | NOT NULL | Environment type ("production", "staging", etc.) |
+| `issuer_type` | TEXT | NOT NULL | Issuer type identifier (e.g., "acme") |
+| `params_json` | TEXT | NOT NULL | Issuer-specific parameter payload (JSON) |
 | `contact_email` | TEXT | NULL | Contact email for ACME account |
 | `account_key_ref` | TEXT | NULL | Reference to ACME account private key (points to `secrets.sqlite`) |
 | `tos_agreed` | INTEGER | NOT NULL DEFAULT 0 | Whether Terms of Service have been agreed to (0/1) |

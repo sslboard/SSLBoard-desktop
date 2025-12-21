@@ -3,6 +3,7 @@ import type { CertificateRecord } from "./certificates";
 
 export type StartIssuanceRequest = {
   domains: string[];
+  issuer_id: string;
 };
 
 export type StartIssuanceResponse = {

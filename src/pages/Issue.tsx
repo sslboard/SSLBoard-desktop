@@ -9,6 +9,7 @@ import {
   startManagedIssuance,
   type StartIssuanceResponse,
 } from "../lib/issuance";
+import { listIssuers, type IssuerConfig } from "../lib/issuers";
 import { cn } from "../lib/utils";
 
 type StatusMap = Record<string, PropagationResult | null>;
@@ -22,6 +23,10 @@ export function IssuePage() {
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [issuers, setIssuers] = useState<IssuerConfig[]>([]);
+  const [issuerLoading, setIssuerLoading] = useState(false);
+  const [issuerError, setIssuerError] = useState<string | null>(null);
+  const [selectedIssuer, setSelectedIssuer] = useState<IssuerConfig | null>(null);
 
   useEffect(() => {
     if (!startResult) {
@@ -29,17 +34,76 @@ export function IssuePage() {
     }
   }, [startResult]);
 
+  useEffect(() => {
+    let active = true;
+    async function loadData() {
+      setIssuerLoading(true);
+      setIssuerError(null);
+      try {
+        const issuerList = await listIssuers();
+        if (!active) return;
+        setIssuers(issuerList);
+        setSelectedIssuer(
+          issuerList.find((issuer) => !issuer.disabled) ?? issuerList[0] ?? null,
+        );
+      } catch (err) {
+        if (active) {
+          setIssuerError(err instanceof Error ? err.message : "Failed to load issuers.");
+        }
+      } finally {
+        if (active) {
+          setIssuerLoading(false);
+        }
+      }
+    }
+    void loadData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // keep selection in sync when issuers refresh
+    if (!selectedIssuer && issuers.length > 0) {
+      setSelectedIssuer(
+        issuers.find((issuer) => !issuer.disabled) ?? issuers[0] ?? null,
+      );
+    }
+  }, [issuers, selectedIssuer]);
+
   const parsedDomains = domainsInput
     .split(/[\s,]+/)
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
+  const issuerLabel = selectedIssuer?.label ?? "No issuer selected";
+  const issuerEnvironment = selectedIssuer?.environment ?? "staging";
+  const issuerDescription =
+    issuerEnvironment === "production" ? "production" : "sandbox";
+  const issuerReady = Boolean(
+    selectedIssuer &&
+      selectedIssuer.contact_email &&
+      selectedIssuer.account_key_ref &&
+      selectedIssuer.tos_agreed &&
+      !selectedIssuer.disabled,
+  );
+
+  function handleSelectIssuer(issuerId: string) {
+    const issuer = issuers.find((entry) => entry.issuer_id === issuerId) ?? null;
+    setSelectedIssuer(issuer);
+  }
 
   async function handleStart() {
     setLoadingStart(true);
     setError(null);
     setSuccessMessage(null);
     try {
-      const result = await startManagedIssuance({ domains: parsedDomains });
+      if (!selectedIssuer) {
+        throw new Error("Select an issuer before starting issuance.");
+      }
+      const result = await startManagedIssuance({
+        domains: parsedDomains,
+        issuer_id: selectedIssuer.issuer_id,
+      });
       setStartResult(result);
       const initialStatus: StatusMap = {};
       result.dns_records.forEach((rec) => {
@@ -100,7 +164,7 @@ export function IssuePage() {
     <div className="space-y-6">
       <PageHeader
         title="Issue"
-        description="Issue a sandbox certificate via ACME DNS-01 (manual DNS adapter)."
+        description={`Issue a ${issuerDescription} certificate via ACME DNS-01 (manual DNS adapter).`}
         action={
           <Button asChild variant="secondary">
             <Link to="/certificates">
@@ -110,6 +174,66 @@ export function IssuePage() {
           </Button>
         }
       />
+
+      {issuerError ? (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {issuerError}
+        </div>
+      ) : null}
+
+      {selectedIssuer && issuerEnvironment === "staging" ? (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-soft">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <div>
+            <div className="font-semibold">Sandbox issuer active</div>
+            <p className="text-[13px] text-amber-900/80">
+              Using Let's Encrypt staging. Safe for end-to-end testing without issuing real certificates.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border bg-card p-6 shadow-soft">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Issuer selection</div>
+            <p className="text-xs text-muted-foreground">
+              Choose the issuer for this issuance run.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <label className="text-sm font-medium text-foreground">
+            Issuer
+          </label>
+          <select
+            className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+            value={selectedIssuer?.issuer_id ?? ""}
+            onChange={(e) => handleSelectIssuer(e.target.value)}
+            disabled={issuerLoading}
+          >
+            {issuers.map((issuer) => (
+              <option
+                key={issuer.issuer_id}
+                value={issuer.issuer_id}
+                disabled={issuer.disabled}
+              >
+                {issuer.label}
+                {issuer.disabled ? " (disabled)" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {selectedIssuer?.directory_url ?? "https://acme-staging-v02.api.letsencrypt.org/directory"}
+          </p>
+          {!issuerReady ? (
+            <p className="text-xs text-muted-foreground">
+              Configure the issuer&apos;s ACME account in Settings before issuing.
+            </p>
+          ) : null}
+        </div>
+      </div>
 
       <div className="rounded-xl border bg-card p-6 shadow-soft">
         <div className="flex items-start justify-between gap-4">
@@ -139,12 +263,15 @@ export function IssuePage() {
               placeholder="test.ezs3.net, test1.ezs3.net"
             />
             <p className="text-xs text-muted-foreground">
-              Comma or newline separated. ACME staging issuer is used by default.
+              Comma or newline separated. Issuer: {issuerLabel} ({issuerEnvironment}).
             </p>
           </label>
 
           <div className="flex flex-wrap gap-3">
-            <Button onClick={() => void handleStart()} disabled={loadingStart || !parsedDomains.length}>
+            <Button
+              onClick={() => void handleStart()}
+              disabled={loadingStart || !parsedDomains.length || !issuerReady}
+            >
               {loadingStart && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Start issuance
             </Button>
@@ -152,6 +279,11 @@ export function IssuePage() {
               Reset
             </Button>
           </div>
+          {!issuerReady ? (
+            <p className="text-xs text-muted-foreground">
+              Select an enabled issuer and configure its ACME details in Settings before starting issuance.
+            </p>
+          ) : null}
 
           {error && (
             <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

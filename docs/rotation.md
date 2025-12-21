@@ -24,6 +24,6 @@ This project keeps secrets inside the Rust core with only reference IDs exposed 
 - Preserve least-privilege scopes and audit the mapping of credential ref → zones/records after rotation.
 
 ## Operational guardrails
-- Require contact email and issuer confirmation before touching production issuers.
+- Require contact email and Terms of Service acceptance before touching production issuers.
 - Keep a short-lived checklist in the UI for rotation steps to avoid silent footguns.
 - Ensure deletions of old refs are intentional; best-effort cleanup happens only after successful replacement.

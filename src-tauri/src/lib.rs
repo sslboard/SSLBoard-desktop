@@ -4,10 +4,11 @@ mod secrets;
 mod storage;
 
 use core::commands::{
-    check_dns_propagation, complete_managed_issuance, create_secret_ref, delete_secret_ref,
-    ensure_acme_account, get_certificate, greet, is_vault_unlocked, list_certificates,
-    list_issuers, list_secret_refs, lock_vault, prepare_dns_challenge, seed_fake_certificate,
-    select_issuer, start_managed_issuance, unlock_vault, update_secret_ref,
+    check_dns_propagation, complete_managed_issuance, create_issuer, create_secret_ref,
+    delete_issuer, delete_secret_ref, get_certificate, greet, is_vault_unlocked,
+    list_certificates, list_issuers, list_secret_refs, lock_vault, prepare_dns_challenge,
+    seed_fake_certificate, select_issuer, set_issuer_disabled, start_managed_issuance,
+    unlock_vault, update_issuer, update_secret_ref,
 };
 use secrets::manager::SecretManager;
 use storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore};
@@ -49,7 +50,10 @@ pub fn run() {
             is_vault_unlocked,
             list_issuers,
             select_issuer,
-            ensure_acme_account,
+            create_issuer,
+            update_issuer,
+            set_issuer_disabled,
+            delete_issuer,
             prepare_dns_challenge,
             check_dns_propagation,
             start_managed_issuance,

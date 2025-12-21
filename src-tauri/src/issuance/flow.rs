@@ -74,6 +74,7 @@ fn sessions() -> &'static Mutex<HashMap<String, PendingIssuance>> {
 /// Starts a managed-key ACME DNS-01 issuance and returns DNS instructions plus a request id.
 pub fn start_managed_dns01(
     domains: Vec<String>,
+    issuer_id: String,
     issuer_store: &IssuerConfigStore,
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
@@ -93,10 +94,16 @@ pub fn start_managed_dns01(
     }
 
     let issuer = issuer_store
-        .list()?
-        .into_iter()
-        .find(|rec| rec.is_selected && !rec.disabled)
-        .ok_or_else(|| anyhow!("No selected issuer found"))?;
+        .get(&issuer_id)?
+        .ok_or_else(|| anyhow!("Issuer not found: {}", issuer_id))?;
+    if issuer.disabled {
+        return Err(anyhow!("Issuer is disabled: {}", issuer_id));
+    }
+    if !issuer.tos_agreed {
+        return Err(anyhow!(
+            "Issuer requires Terms of Service acceptance before issuance"
+        ));
+    }
 
     let contact_email = issuer
         .contact_email
