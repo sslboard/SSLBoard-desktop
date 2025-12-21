@@ -41,6 +41,7 @@ impl SecretMetadataStore {
 
         Self::configure_connection(&conn)?;
         Self::init_schema(&conn)?;
+        Self::migrate_dns_credentials(&conn)?;
         Self::enforce_permissions(&db_path, created)?;
 
         Ok(Self {
@@ -73,6 +74,14 @@ impl SecretMetadataStore {
         if !Self::column_exists(conn, "secret_metadata", "ciphertext")? {
             conn.execute("ALTER TABLE secret_metadata ADD COLUMN ciphertext BLOB", [])?;
         }
+        Ok(())
+    }
+
+    fn migrate_dns_credentials(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "UPDATE secret_metadata SET kind = 'dns_provider_token' WHERE kind = 'dns_credential'",
+            [],
+        )?;
         Ok(())
     }
 
@@ -292,7 +301,7 @@ impl SecretMetadataStore {
         let created_raw: String = row.get(3)?;
 
         let kind = match kind_raw.as_str() {
-            "dns_credential" => super::types::SecretKind::DnsCredential,
+            "dns_credential" | "dns_provider_token" => super::types::SecretKind::DnsProviderToken,
             "acme_account_key" => super::types::SecretKind::AcmeAccountKey,
             "managed_private_key" => super::types::SecretKind::ManagedPrivateKey,
             other => return Err(anyhow!("unknown secret kind: {other}")),

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::issuance::dns::{DnsPropagationResult, DnsRecordInstruction, PropagationState};
 use crate::secrets::types::{SecretKind, SecretMetadata};
@@ -144,6 +145,80 @@ pub struct CheckPropagationRequest {
 
 pub type PropagationDto = DnsPropagationResult;
 pub type PropagationStateDto = PropagationState;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DnsProviderType {
+    Cloudflare,
+    DigitalOcean,
+    Route53,
+    Manual,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsProviderDto {
+    pub id: String,
+    pub provider_type: DnsProviderType,
+    pub label: String,
+    pub domain_suffixes: Vec<String>,
+    pub config: Option<Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateDnsProviderRequest {
+    pub provider_type: DnsProviderType,
+    pub label: String,
+    pub domain_suffixes: String,
+    pub api_token: Option<String>,
+    pub config: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateDnsProviderRequest {
+    pub provider_id: String,
+    pub label: String,
+    pub domain_suffixes: String,
+    pub api_token: Option<String>,
+    pub config: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeleteDnsProviderRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResolveDnsProviderRequest {
+    pub hostname: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DnsProviderResolutionDto {
+    pub provider: Option<DnsProviderDto>,
+    pub matched_suffix: Option<String>,
+    pub ambiguous: Vec<DnsProviderDto>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TestDnsProviderRequest {
+    pub provider_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DnsProviderTestResult {
+    pub success: bool,
+    pub record_name: Option<String>,
+    pub value: Option<String>,
+    pub propagation: Option<DnsPropagationResult>,
+    pub error: Option<String>,
+    pub error_stage: Option<String>,
+    pub elapsed_ms: u64,
+    pub create_ms: Option<u64>,
+    pub propagation_ms: Option<u64>,
+    pub cleanup_ms: Option<u64>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct StartIssuanceRequest {

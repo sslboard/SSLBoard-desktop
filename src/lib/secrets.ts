@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type SecretKind =
-  | "dns_credential"
+  | "dns_provider_token"
   | "acme_account_key"
   | "managed_private_key";
 

@@ -5,6 +5,10 @@ import { Button } from "../components/ui/button";
 import { PageHeader } from "../components/page-header";
 import { checkDnsPropagation, type PropagationResult } from "../lib/dns";
 import {
+  resolveDnsProvider,
+  type DnsProviderResolution,
+} from "../lib/dns-providers";
+import {
   completeManagedIssuance,
   startManagedIssuance,
   type StartIssuanceResponse,
@@ -27,6 +31,16 @@ export function IssuePage() {
   const [issuerLoading, setIssuerLoading] = useState(false);
   const [issuerError, setIssuerError] = useState<string | null>(null);
   const [selectedIssuer, setSelectedIssuer] = useState<IssuerConfig | null>(null);
+  const [providerPreview, setProviderPreview] = useState<
+    Record<string, DnsProviderResolution | null>
+  >({});
+  const [providerLoading, setProviderLoading] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
+
+  const parsedDomains = domainsInput
+    .split(/[\s,]+/)
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
 
   useEffect(() => {
     if (!startResult) {
@@ -71,10 +85,59 @@ export function IssuePage() {
     }
   }, [issuers, selectedIssuer]);
 
-  const parsedDomains = domainsInput
-    .split(/[\s,]+/)
-    .map((d) => d.trim().toLowerCase())
-    .filter(Boolean);
+  useEffect(() => {
+    let active = true;
+    if (!parsedDomains.length) {
+      setProviderPreview({});
+      setProviderError(null);
+      return undefined;
+    }
+    setProviderLoading(true);
+    setProviderError(null);
+    const timer = window.setTimeout(() => {
+      Promise.all(
+        parsedDomains.map(async (domain) => {
+          try {
+            const resolution = await resolveDnsProvider(domain);
+            return { domain, resolution };
+          } catch (err) {
+            return { domain, error: normalizeError(err) };
+          }
+        }),
+      )
+        .then((results) => {
+          if (!active) return;
+          const next: Record<string, DnsProviderResolution | null> = {};
+          let errorMessage: string | null = null;
+          results.forEach((item) => {
+            if ("error" in item) {
+              next[item.domain] = null;
+              errorMessage = item.error;
+            } else {
+              next[item.domain] = item.resolution;
+            }
+          });
+          setProviderPreview(next);
+          setProviderError(errorMessage);
+        })
+        .catch((err) => {
+          if (active) {
+            setProviderError(normalizeError(err));
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setProviderLoading(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [parsedDomains.join("|")]);
+
   const issuerLabel = selectedIssuer?.label ?? "No issuer selected";
   const issuerEnvironment = selectedIssuer?.environment ?? "staging";
   const issuerDescription =
@@ -164,7 +227,7 @@ export function IssuePage() {
     <div className="space-y-6">
       <PageHeader
         title="Issue"
-        description={`Issue a ${issuerDescription} certificate via ACME DNS-01 (manual DNS adapter).`}
+        description={`Issue a ${issuerDescription} certificate via ACME DNS-01 with automatic providers or manual fallback.`}
         action={
           <Button asChild variant="secondary">
             <Link to="/certificates">
@@ -267,6 +330,35 @@ export function IssuePage() {
             </p>
           </label>
 
+          {parsedDomains.length ? (
+            <div className="rounded-lg border bg-background/70 p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                DNS provider preview
+                {providerLoading ? (
+                  <span className="inline-flex items-center gap-1 text-[11px]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Resolving
+                  </span>
+                ) : null}
+              </div>
+              {providerError ? (
+                <div className="mt-2 flex items-center gap-2 rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {providerError}
+                </div>
+              ) : null}
+              <div className="mt-2 space-y-2">
+                {parsedDomains.map((domain) => (
+                  <ProviderPreviewRow
+                    key={domain}
+                    domain={domain}
+                    resolution={providerPreview[domain] ?? null}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-3">
             <Button
               onClick={() => void handleStart()}
@@ -297,7 +389,7 @@ export function IssuePage() {
               <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 DNS instructions
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                  manual
+                  {startResult.dns_records[0]?.adapter ?? "manual"}
                 </span>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
@@ -346,6 +438,50 @@ function InstructionCard({
       <InstructionField label="Record name" value={record.record_name} />
       <InstructionField label="Value" value={record.value} />
       <InstructionField label="Zone" value={record.zone} />
+    </div>
+  );
+}
+
+function ProviderPreviewRow({
+  domain,
+  resolution,
+}: {
+  domain: string;
+  resolution: DnsProviderResolution | null;
+}) {
+  if (!resolution) {
+    return (
+      <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <span>{domain}</span>
+        <span>Unable to resolve</span>
+      </div>
+    );
+  }
+
+  const provider = resolution.provider;
+  const ambiguous = resolution.ambiguous.length > 1;
+  const label = provider?.label ?? "Manual DNS required";
+  const type = provider?.provider_type ?? "manual";
+  const suffix = resolution.matched_suffix;
+
+  return (
+    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-foreground">{domain}</span>
+        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase text-primary">
+          {type}
+        </span>
+      </div>
+      <div className="mt-1 text-muted-foreground">
+        {label}
+        {suffix ? ` · matches ${suffix}` : ""}
+      </div>
+      {ambiguous ? (
+        <div className="mt-1 flex items-center gap-2 text-amber-700">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Ambiguous: {resolution.ambiguous.map((entry) => entry.label).join(", ")}
+        </div>
+      ) : null}
     </div>
   );
 }

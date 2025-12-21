@@ -50,7 +50,7 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [formState, setFormState] = useState<SecretFormState>({
     label: "",
-    kind: "dns_credential",
+    kind: "acme_account_key",
     secret_value: "",
   });
   const [saving, setSaving] = useState(false);
@@ -108,7 +108,7 @@ export function SettingsPage() {
   }
 
   function resetForm() {
-    setFormState({ label: "", kind: "dns_credential", secret_value: "" });
+    setFormState({ label: "", kind: "acme_account_key", secret_value: "" });
   }
 
   function resetIssuerForm() {
@@ -300,8 +300,8 @@ export function SettingsPage() {
 
   function formatKind(kind: SecretKind) {
     switch (kind) {
-      case "dns_credential":
-        return "DNS credential";
+      case "dns_provider_token":
+        return "DNS provider token";
       case "acme_account_key":
         return "ACME account key";
       case "managed_private_key":
@@ -578,7 +578,7 @@ export function SettingsPage() {
             ) : null}
             {!loading && !hasSecrets ? (
               <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/60 p-5 text-sm text-muted-foreground">
-                No secret references yet. Add a DNS credential or ACME account
+                No secret references yet. Add an ACME account or managed key
                 to begin.
               </div>
             ) : null}
@@ -652,7 +652,7 @@ export function SettingsPage() {
                           onChange={(e) => setRotateLabel(e.target.value)}
                         />
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Label helps identify DNS configuration; reference ID stays stable.
+                          Label helps identify the secret reference; the ID stays stable.
                         </p>
                       </div>
                     </div>
@@ -727,7 +727,6 @@ export function SettingsPage() {
                   }))
                 }
               >
-                <option value="dns_credential">DNS credential</option>
                 <option value="acme_account_key">ACME account key</option>
                 <option value="managed_private_key">Managed private key</option>
               </select>

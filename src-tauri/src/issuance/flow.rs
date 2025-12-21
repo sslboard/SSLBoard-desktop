@@ -19,7 +19,11 @@ use crate::{
     core::types::{CertificateRecord, CertificateSource},
     issuance::dns::{DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter},
     secrets::{manager::SecretManager, types::SecretKind},
-    storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
+    storage::{
+        dns::{DnsConfigStore, DnsProvider},
+        inventory::InventoryStore,
+        issuer::IssuerConfigStore,
+    },
 };
 
 /// In-memory persistence for acme-lib that avoids disk I/O and lets us seed the ACME account key.
@@ -152,19 +156,15 @@ pub fn start_managed_dns01(
         let proof = dns.dns_proof();
         let domain = auth.domain_name().to_string();
 
-        let mapping = dns_store.find_for_hostname(&domain)?;
-        if let Some(mapping) = &mapping {
-            if mapping.adapter_id != "manual" {
-                return Err(anyhow!(
-                    "Only manual DNS adapter is supported for this flow (found {})",
-                    mapping.adapter_id
-                ));
-            }
-        }
+        let resolution = dns_store.resolve_provider_for_domain(&domain)?;
+        let zone_override = resolution
+            .provider
+            .as_ref()
+            .and_then(provider_zone_override);
         let request = DnsChallengeRequest {
             domain: domain.clone(),
             value: proof.clone(),
-            zone: mapping.and_then(|m| m.zone),
+            zone: zone_override,
         };
         let record = adapter.present_txt(&request)?;
         dns_records.push(record);
@@ -304,4 +304,12 @@ fn root_from_hostname(hostname: &str) -> String {
     } else {
         hostname.to_string()
     }
+}
+
+fn provider_zone_override(provider: &DnsProvider) -> Option<String> {
+    provider
+        .config_json
+        .as_ref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.get("zone").and_then(|zone| zone.as_str().map(|s| s.to_string())))
 }

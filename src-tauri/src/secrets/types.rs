@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SecretKind {
-    DnsCredential,
+    DnsProviderToken,
     AcmeAccountKey,
     ManagedPrivateKey,
 }
@@ -13,7 +13,7 @@ pub enum SecretKind {
 impl SecretKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            SecretKind::DnsCredential => "dns_credential",
+            SecretKind::DnsProviderToken => "dns_provider_token",
             SecretKind::AcmeAccountKey => "acme_account_key",
             SecretKind::ManagedPrivateKey => "managed_private_key",
         }

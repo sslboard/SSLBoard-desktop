@@ -4,7 +4,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ## Roadmap to v0 (iterative, shippable steps)
 
-### 1) Local data model + inventory foundations (no issuance yet)
+### 1) Local data model + inventory foundations (no issuance yet) [Done]
 
 **Goal:** the app can store and display certificates (metadata-only at first).
 
@@ -25,11 +25,11 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ---
 
-### 2) Secret storage abstraction (required before real issuance)
+### 2) Secret storage abstraction (required before real issuance) [Mostly done]
 
 **Goal:** private keys + DNS API tokens never touch the UI.
 
-* **Rust**
+* **Rust** [Done]
 
   * Implement `secrets::store::SecretStore` (as per docs), backed by OS secret store (Keychain / Credential Manager / Secret Service).
   * Store/retrieve:
@@ -37,19 +37,19 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * ACME account key refs
     * Managed private key refs
     * DNS provider credentials refs
-* **UI**
+* **UI** [Done]
 
   * Minimal “Settings → Secrets” page that shows *only references* (no raw secrets), with “add / remove” flows driven by Rust.
 
-**Done when:** UI can add a “DNS credential” and later the Rust core can fetch it by ID without exposing it back.
+**Done when:** UI can add a DNS provider token and later the Rust core can fetch it by ID without exposing it back. [Met]
 
 ---
 
-### 3) Issuer interface + Let’s Encrypt **SANDBOX** issuer (first real milestone)
+### 3) Issuer interface + Let’s Encrypt **SANDBOX** issuer (first real milestone) [Partial]
 
 **Goal:** pluggable issuer from day 1; sandbox is default.
 
-* **Rust**
+* **Rust** [Partial]
 
   * Define an `Issuer` trait (or equivalent) with operations like:
 
@@ -60,20 +60,20 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * `download_certificate(order)`
   * Implement **ACME issuer** configured to Let’s Encrypt **staging/sandbox** endpoint by default.
   * Add `issuer_id` + config in local store.
-* **UI**
+* **UI** [Done]
 
   * “Issuer” settings: dropdown (LE Sandbox, later LE Prod, later others).
   * Make it visually obvious when you’re on sandbox (banner/badge).
 
-**Done when:** you can create an ACME account against LE staging and persist the account key ref locally.
+**Done when:** you can create an ACME account against LE staging and persist the account key ref locally. [Not verified]
 
 ---
 
-### 4) DNS challenge engine + pluggable DNS “service” (manual mode first)
+### 4) DNS challenge engine + pluggable DNS “service” (manual mode first) [Done]
 
 **Goal:** issue certs even if zero DNS API integration exists.
 
-* **Rust**
+* **Rust** [Done]
 
   * Define `DnsAdapter` trait: `present_txt(zone, name, value)`, `cleanup_txt(...)`, `check_propagation(...)`.
   * Implement **ManualDNSAdapter**:
@@ -81,7 +81,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * returns the TXT record instructions
     * “wait + recheck” propagation loop
   * Build “zone mapping” concept: hostname → zone → adapter config.
-* **UI**
+* **UI** [Done]
 
   * DNS stepper UI for DNS-01:
 
@@ -89,15 +89,15 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * “I’ve added it” → triggers propagation checks
     * shows progress + errors (NXDOMAIN, wrong TXT, TTL delays)
 
-**Done when:** you can run a full DNS-01 flow with the user manually editing DNS.
+**Done when:** you can run a full DNS-01 flow with the user manually editing DNS. [Met]
 
 ---
 
-### 5) “Issue certificate” flow (generate key OR CSR import)
+### 5) “Issue certificate” flow (generate key OR CSR import) [Partial]
 
 **Goal:** you can obtain a real sandbox certificate end-to-end.
 
-* **UI**
+* **UI** [Partial]
 
   * Wizard:
 
@@ -108,7 +108,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
        * **Import CSR file**
     3. DNS challenge (from step 4)
     4. Finalize + success screen
-* **Rust**
+* **Rust** [Partial]
 
   * CSR validation (`issuance/pki/csr.rs`):
 
@@ -116,21 +116,21 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
   * For “generate key” path: generate keypair locally, store private key in SecretStore, generate CSR internally.
   * Store resulting certificate chain + metadata; mark as `Managed`.
 
-**Done when:** you can issue a LE staging cert for `example.yourdomain.com`, and it appears in the inventory as Managed.
+**Done when:** you can issue a LE staging cert for `example.yourdomain.com`, and it appears in the inventory as Managed. [Not verified]
 
 ---
 
-### 6) Export for managed certificates (PEM first; PFX later if you want)
+### 6) Export for managed certificates (PEM first; PFX later if you want) [Not started]
 
 **Goal:** distribution pattern #1 from your functional doc is real.
 
-* **UI**
+* **UI** [Not started]
 
   * “Export…” action on a managed cert:
 
     * PEM bundle options (cert, chain, fullchain)
     * include private key checkbox (disabled for CSR-imported keys you don’t have)
-* **Rust**
+* **Rust** [Not started]
 
   * `distribution/export.rs`:
 
@@ -141,36 +141,36 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * warn before exporting private keys
     * optional “require user presence” gate later (macOS Touch ID, if you choose)
 
-**Done when:** exported files work with nginx/traefik/caddy locally.
+**Done when:** exported files work with nginx/traefik/caddy locally. [Not met]
 
 ---
 
-### 7) CT discovery integration (external certs) via sslboard.com API
+### 7) CT discovery integration (external certs) via sslboard.com API [Not started]
 
 **Goal:** “inventory everything”, but distinguish custody.
 
-* **UI**
+* **UI** [Not started]
 
   * “Discover certificates for domain” screen:
 
     * input: apex domain
     * shows list of certs found in CT
     * user can “Add to inventory”
-* **Rust**
+* **Rust** [Not started]
 
   * Client for sslboard.com CT query API.
   * Map returned metadata into `CertificateRecord` with `source = External`.
   * Dedup logic: if external fingerprint matches existing managed cert, link/merge.
 
-**Done when:** querying a domain populates external certs in inventory with issuer/serial/NB/NA/SANs.
+**Done when:** querying a domain populates external certs in inventory with issuer/serial/NB/NA/SANs. [Not met]
 
 ---
 
-### 8) Renewal flows (managed + external)
+### 8) Renewal flows (managed + external) [Not started]
 
 **Goal:** one-button renew with sane behavior.
 
-* **UI**
+* **UI** [Not started]
 
   * “Renew” action with a clear plan preview:
 
@@ -180,7 +180,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
       * reuse existing key (preferred)
       * generate new key
       * use/import CSR
-* **Rust**
+* **Rust** [Not started]
 
   * Renewal planner:
 
@@ -189,21 +189,21 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
   * Persist renewal attempt history + outcome.
   * Update inventory record or create new “version” record (your choice; v0 can keep it simple).
 
-**Done when:** you can renew a managed cert without changing the key, and renew an external cert by reissuing a new managed one.
+**Done when:** you can renew a managed cert without changing the key, and renew an external cert by reissuing a new managed one. [Not met]
 
 ---
 
-### 9) First real DNS provider adapter (Cloudflare is a good v0 pick)
+### 9) First real DNS provider adapter (Cloudflare is a good v0 pick) [Partial]
 
 **Goal:** prove the adapter system; remove “CLI barrier” for many users.
 
-* **UI**
+* **UI** [Partial]
 
   * “DNS Zones” settings:
 
     * map `example.com` → Cloudflare adapter → select credential
   * Issuance flow auto-selects adapter based on hostname.
-* **Rust**
+* **Rust** [Not started]
 
   * Implement `dns/cloudflare.rs` adapter using token from SecretStore.
   * Robustness:
@@ -212,11 +212,11 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * cleanup on failure
     * propagation check uses authoritative resolvers + configurable retries
 
-**Done when:** issuance works end-to-end without the user touching their DNS UI (beyond granting token).
+**Done when:** issuance works end-to-end without the user touching their DNS UI (beyond granting token). [Not met]
 
 ---
 
-### 10) v0 hardening + “make it hard to shoot yourself”
+### 10) v0 hardening + “make it hard to shoot yourself” [Not started]
 
 **Goal:** reduce footguns and supportability issues.
 

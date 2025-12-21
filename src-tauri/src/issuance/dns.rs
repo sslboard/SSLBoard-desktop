@@ -108,6 +108,16 @@ impl ManualDnsAdapter {
     }
 }
 
+pub fn check_txt_record(record_name: &str, expected_value: &str) -> Result<DnsPropagationResult> {
+    let responses = ManualDnsAdapter::query_txt(record_name)?;
+    let req = DnsChallengeRequest {
+        domain: record_name.to_string(),
+        value: expected_value.to_string(),
+        zone: None,
+    };
+    Ok(interpret_dns_results(&responses, &req))
+}
+
 impl DnsAdapter for ManualDnsAdapter {
     fn id(&self) -> &'static str {
         "manual"

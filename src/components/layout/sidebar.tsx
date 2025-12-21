@@ -24,6 +24,7 @@ export function Sidebar({ items, onNavigate }: SidebarProps) {
             key={item.to}
             to={item.to}
             onClick={onNavigate}
+            end={item.to === "/settings"}
             className={({ isActive }) =>
               cn(
                 "group flex items-start gap-3 rounded-xl px-3 py-3 transition-colors",

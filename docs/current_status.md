@@ -6,6 +6,10 @@
 - `cargo fmt` + `cargo check` pass; current warnings are expected unused helpers (`resolve_secret`, `SecretStore::retrieve`, `InventoryStore::insert_certificate`) pending integration with issuance/DNS flows.
 - Inventory foundations are in place (`src-tauri/src/storage/inventory.rs` + Tauri commands) with a Certificates page that lists metadata only; a demo seed record is inserted in debug builds and via `seed_fake_certificate`.
 - Issuance/DNS flows are partially in place: DNS-01 manual adapter + propagation polling implemented (ureq DoH lookup every 2s, 90s budget) with UI stepper on `Issue` page; OpenSpec change `add-dns-challenge-engine-manual-adapter` tasks are complete; ACME issuer sandbox change still pending.
+- DNS provider configuration is implemented end-to-end: new `dns_providers` storage model + migration from `dns_zone_mappings`, CRUD/resolve/test Tauri commands, and a dedicated Settings -> DNS Providers page with overlap warnings and inline delete confirmation. Provider resolution now shows a preview in the Issue flow and falls back to manual DNS when no provider matches.
+- Secret kind `dns_credential` has been replaced with `dns_provider_token` (migration included), and the Settings secrets UI no longer offers standalone DNS credential creation.
+- Test connection flow is wired (create -> propagate -> cleanup) but provider adapters are currently stubbed, so tests will return an error until real provider integrations are added.
+- Recent fixes: DNS provider store deadlock fixed (no nested mutex lock during create/update/delete), sidebar active state for Settings vs DNS Providers fixed, and delete confirmation UX adjusted in the DNS Providers list.
 - New OpenSpec change `add-issue-certificate-flow` drafted for step 5 (wizard, key-gen vs CSR import, DNS-01 gating, Managed persistence).
 - Key dependencies added: `uuid` (prefixed ref ids) and `keyring` (OS store). Secrets DB lives at `app_data_dir()/secrets.sqlite`; key material stays in OS keychain (fail fast if unavailable, no file fallback).
 - Placeholders / pending items:

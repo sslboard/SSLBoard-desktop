@@ -3,19 +3,29 @@ use tauri::{async_runtime::spawn_blocking, State};
 use crate::{
     core::types::{
         CertificateRecord, CheckPropagationRequest, CompleteIssuanceRequest, CreateIssuerRequest,
-        CreateSecretRequest, DeleteIssuerRequest, IssuerConfigDto, IssuerEnvironment,
-        IssuerType, PrepareDnsChallengeRequest, PreparedDnsChallenge, PropagationDto,
-        SecretRefRecord, SelectIssuerRequest, SetIssuerDisabledRequest, StartIssuanceRequest,
-        StartIssuanceResponse, UpdateIssuerRequest, UpdateSecretRequest,
+        CreateSecretRequest, CreateDnsProviderRequest, DeleteDnsProviderRequest, DeleteIssuerRequest,
+        DnsProviderDto, DnsProviderResolutionDto, DnsProviderTestResult, DnsProviderType,
+        IssuerConfigDto, IssuerEnvironment, IssuerType, PrepareDnsChallengeRequest,
+        PreparedDnsChallenge, PropagationDto, ResolveDnsProviderRequest, SecretRefRecord,
+        SelectIssuerRequest, SetIssuerDisabledRequest, StartIssuanceRequest,
+        StartIssuanceResponse, TestDnsProviderRequest, UpdateDnsProviderRequest,
+        UpdateIssuerRequest, UpdateSecretRequest,
     },
     issuance::{
         acme::generate_account_key_pem,
-        dns::{DnsAdapter, DnsChallengeRequest, ManualDnsAdapter},
+        dns::{check_txt_record, DnsAdapter, DnsChallengeRequest, ManualDnsAdapter},
+        dns_providers::adapter_for_provider,
         flow::{complete_managed_dns01, start_managed_dns01},
     },
     secrets::{manager::SecretManager, types::SecretKind},
-    storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
+    storage::{
+        dns::{parse_domain_suffixes, DnsConfigStore, DnsProvider},
+        inventory::InventoryStore,
+        issuer::IssuerConfigStore,
+    },
 };
+use std::time::{Duration, Instant};
+use uuid::Uuid;
 /// A simple greeting command for testing the Tauri-Rust bridge.
 /// This command demonstrates basic string processing and command invocation.
 ///
@@ -320,11 +330,15 @@ pub async fn prepare_dns_challenge(
     let store = store.inner().clone();
     spawn_blocking(move || -> Result<PreparedDnsChallenge, anyhow::Error> {
         let adapter = ManualDnsAdapter::new();
-        let mapping = store.find_for_hostname(&req.domain)?;
+        let resolution = store.resolve_provider_for_domain(&req.domain)?;
+        let zone_override = resolution
+            .provider
+            .as_ref()
+            .and_then(provider_zone_override);
         let challenge = DnsChallengeRequest {
             domain: req.domain.clone(),
             value: req.txt_value.clone(),
-            zone: mapping.and_then(|m| m.zone),
+            zone: zone_override,
         };
         let record = adapter.present_txt(&challenge)?;
         Ok(PreparedDnsChallenge { record })
@@ -349,6 +363,296 @@ pub async fn check_dns_propagation(req: CheckPropagationRequest) -> Result<Propa
     })
     .await
     .map_err(|err| format!("Propagation join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Lists DNS providers.
+#[tauri::command]
+pub async fn dns_provider_list(
+    store: State<'_, DnsConfigStore>,
+) -> Result<Vec<DnsProviderDto>, String> {
+    let store = store.inner().clone();
+    spawn_blocking(move || -> Result<Vec<DnsProviderDto>, anyhow::Error> {
+        let records = store.list_providers()?;
+        Ok(records.into_iter().map(provider_record_to_dto).collect())
+    })
+    .await
+    .map_err(|err| format!("DNS provider list join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Creates a DNS provider configuration.
+#[tauri::command]
+pub async fn dns_provider_create(
+    store: State<'_, DnsConfigStore>,
+    secrets: State<'_, SecretManager>,
+    req: CreateDnsProviderRequest,
+) -> Result<DnsProviderDto, String> {
+    let store = store.inner().clone();
+    let secrets = secrets.inner().clone();
+    spawn_blocking(move || -> Result<DnsProviderDto, anyhow::Error> {
+        if req.label.trim().is_empty() {
+            return Err(anyhow::anyhow!("provider label is required"));
+        }
+        let domain_suffixes = parse_domain_suffixes(&req.domain_suffixes);
+        if domain_suffixes.is_empty() {
+            return Err(anyhow::anyhow!("at least one domain suffix is required"));
+        }
+        let provider_type = provider_type_to_string(&req.provider_type);
+        let needs_token = !matches!(req.provider_type, DnsProviderType::Manual);
+        let secret_ref = if needs_token {
+            let token = req
+                .api_token
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("API token is required for this provider"))?;
+            let label = format!("DNS provider token: {}", req.label.trim());
+            let record = secrets
+                .create_secret(SecretKind::DnsProviderToken, label, token)
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            Some(record.id)
+        } else {
+            None
+        };
+
+        let record = store.create_provider(
+            provider_type,
+            req.label.trim().to_string(),
+            domain_suffixes,
+            secret_ref,
+            req.config.clone(),
+        )?;
+        Ok(provider_record_to_dto(record))
+    })
+    .await
+    .map_err(|err| format!("DNS provider create join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Updates a DNS provider configuration.
+#[tauri::command]
+pub async fn dns_provider_update(
+    store: State<'_, DnsConfigStore>,
+    secrets: State<'_, SecretManager>,
+    req: UpdateDnsProviderRequest,
+) -> Result<DnsProviderDto, String> {
+    let store = store.inner().clone();
+    let secrets = secrets.inner().clone();
+    spawn_blocking(move || -> Result<DnsProviderDto, anyhow::Error> {
+        if req.label.trim().is_empty() {
+            return Err(anyhow::anyhow!("provider label is required"));
+        }
+        let domain_suffixes = parse_domain_suffixes(&req.domain_suffixes);
+        if domain_suffixes.is_empty() {
+            return Err(anyhow::anyhow!("at least one domain suffix is required"));
+        }
+
+        let existing = store
+            .get_provider(&req.provider_id)?
+            .ok_or_else(|| anyhow::anyhow!("provider not found: {}", req.provider_id))?;
+
+        if let Some(token) = req
+            .api_token
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+        {
+            let secret_label = format!("DNS provider token: {}", req.label.trim());
+            match existing.secret_ref.clone() {
+                Some(secret_ref) => {
+                    secrets
+                        .update_secret(&secret_ref, token, Some(secret_label.clone()))
+                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    secret_ref
+                }
+                None => {
+                    let record = secrets
+                        .create_secret(SecretKind::DnsProviderToken, secret_label.clone(), token)
+                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    store.update_provider_secret_ref(&req.provider_id, Some(record.id.clone()))?;
+                    record.id
+                }
+            };
+        }
+
+        let record = store.update_provider(
+            &req.provider_id,
+            req.label.trim().to_string(),
+            domain_suffixes,
+            req.config.clone(),
+        )?;
+        Ok(provider_record_to_dto(record))
+    })
+    .await
+    .map_err(|err| format!("DNS provider update join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Deletes a DNS provider configuration.
+#[tauri::command]
+pub async fn dns_provider_delete(
+    store: State<'_, DnsConfigStore>,
+    secrets: State<'_, SecretManager>,
+    req: DeleteDnsProviderRequest,
+) -> Result<String, String> {
+    let store = store.inner().clone();
+    let secrets = secrets.inner().clone();
+    spawn_blocking(move || -> Result<String, anyhow::Error> {
+        let record = store.delete_provider(&req.provider_id)?;
+        if let Some(secret_ref) = record.secret_ref {
+            secrets
+                .delete_secret(&secret_ref)
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        }
+        Ok(req.provider_id)
+    })
+    .await
+    .map_err(|err| format!("DNS provider delete join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Tests a DNS provider configuration by creating a temporary TXT record.
+#[tauri::command]
+pub async fn dns_provider_test(
+    store: State<'_, DnsConfigStore>,
+    secrets: State<'_, SecretManager>,
+    req: TestDnsProviderRequest,
+) -> Result<DnsProviderTestResult, String> {
+    let store = store.inner().clone();
+    let secrets = secrets.inner().clone();
+    spawn_blocking(move || -> Result<DnsProviderTestResult, anyhow::Error> {
+        let started = Instant::now();
+        let provider = store
+            .get_provider(&req.provider_id)?
+            .ok_or_else(|| anyhow::anyhow!("provider not found: {}", req.provider_id))?;
+
+        let suffix = provider
+            .domain_suffixes
+            .get(0)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("provider has no domain suffixes"))?;
+        let random = Uuid::new_v4().as_simple().to_string();
+        let record_name = format!("_sslboard-test-{}.{}", &random[..10], suffix);
+        let value = format!("sslboard-test-{}", &random[..10]);
+
+        let adapter = adapter_for_provider(&provider, &secrets);
+
+        let create_start = Instant::now();
+        if let Err(err) = adapter.create_txt(&record_name, &value) {
+            return Ok(DnsProviderTestResult {
+                success: false,
+                record_name: Some(record_name),
+                value: Some(value),
+                propagation: None,
+                error: Some(err.to_string()),
+                error_stage: Some("create".to_string()),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+                create_ms: Some(create_start.elapsed().as_millis() as u64),
+                propagation_ms: None,
+                cleanup_ms: None,
+            });
+        }
+        let create_ms = create_start.elapsed().as_millis() as u64;
+
+        let propagation_start = Instant::now();
+        let propagation = match poll_txt_propagation(&record_name, &value) {
+            Ok(result) => result,
+            Err(err) => {
+                let propagation_ms = propagation_start.elapsed().as_millis() as u64;
+                let cleanup_start = Instant::now();
+                let cleanup_result = adapter.cleanup_txt(&record_name);
+                let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
+                if let Err(cleanup_err) = cleanup_result {
+                    return Ok(DnsProviderTestResult {
+                        success: false,
+                        record_name: Some(record_name),
+                        value: Some(value),
+                        propagation: None,
+                        error: Some(cleanup_err.to_string()),
+                        error_stage: Some("cleanup".to_string()),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                        create_ms: Some(create_ms),
+                        propagation_ms: Some(propagation_ms),
+                        cleanup_ms: Some(cleanup_ms),
+                    });
+                }
+                return Ok(DnsProviderTestResult {
+                    success: false,
+                    record_name: Some(record_name),
+                    value: Some(value),
+                    propagation: None,
+                    error: Some(err.to_string()),
+                    error_stage: Some("propagation".to_string()),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    create_ms: Some(create_ms),
+                    propagation_ms: Some(propagation_ms),
+                    cleanup_ms: Some(cleanup_ms),
+                });
+            }
+        };
+        let propagation_ms = propagation_start.elapsed().as_millis() as u64;
+        let cleanup_start = Instant::now();
+        let cleanup_result = adapter.cleanup_txt(&record_name);
+        let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
+
+        if let Err(err) = cleanup_result {
+            return Ok(DnsProviderTestResult {
+                success: false,
+                record_name: Some(record_name),
+                value: Some(value),
+                propagation: Some(propagation),
+                error: Some(err.to_string()),
+                error_stage: Some("cleanup".to_string()),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+                create_ms: Some(create_ms),
+                propagation_ms: Some(propagation_ms),
+                cleanup_ms: Some(cleanup_ms),
+            });
+        }
+
+        let success = matches!(
+            propagation.state,
+            crate::issuance::dns::PropagationState::Found
+        );
+
+        Ok(DnsProviderTestResult {
+            success,
+            record_name: Some(record_name),
+            value: Some(value),
+            propagation: Some(propagation),
+            error: None,
+            error_stage: None,
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            create_ms: Some(create_ms),
+            propagation_ms: Some(propagation_ms),
+            cleanup_ms: Some(cleanup_ms),
+        })
+    })
+    .await
+    .map_err(|err| format!("DNS provider test join error: {err}"))?
+    .map_err(|err: anyhow::Error| err.to_string())
+}
+
+/// Resolves a DNS provider for a hostname.
+#[tauri::command]
+pub async fn dns_resolve_provider(
+    store: State<'_, DnsConfigStore>,
+    req: ResolveDnsProviderRequest,
+) -> Result<DnsProviderResolutionDto, String> {
+    let store = store.inner().clone();
+    spawn_blocking(move || -> Result<DnsProviderResolutionDto, anyhow::Error> {
+        let resolution = store.resolve_provider_for_domain(&req.hostname)?;
+        Ok(DnsProviderResolutionDto {
+            provider: resolution.provider.map(provider_record_to_dto),
+            matched_suffix: resolution.matched_suffix,
+            ambiguous: resolution
+                .ambiguous
+                .into_iter()
+                .map(provider_record_to_dto)
+                .collect(),
+        })
+    })
+    .await
+    .map_err(|err| format!("DNS resolve provider join error: {err}"))?
     .map_err(|err: anyhow::Error| err.to_string())
 }
 
@@ -459,6 +763,66 @@ fn issuer_record_to_dto(record: crate::storage::issuer::IssuerConfigRecord) -> I
         tos_agreed: record.tos_agreed,
         is_selected: record.is_selected,
         disabled: record.disabled,
+    }
+}
+
+fn provider_record_to_dto(record: DnsProvider) -> DnsProviderDto {
+    let provider_type = provider_type_from_string(&record.provider_type);
+    let config = record
+        .config_json
+        .as_ref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok());
+    DnsProviderDto {
+        id: record.id,
+        provider_type,
+        label: record.label,
+        domain_suffixes: record.domain_suffixes,
+        config,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
+    }
+}
+
+fn provider_type_to_string(provider_type: &DnsProviderType) -> String {
+    match provider_type {
+        DnsProviderType::Cloudflare => "cloudflare".to_string(),
+        DnsProviderType::DigitalOcean => "digitalocean".to_string(),
+        DnsProviderType::Route53 => "route53".to_string(),
+        DnsProviderType::Manual => "manual".to_string(),
+    }
+}
+
+fn provider_type_from_string(raw: &str) -> DnsProviderType {
+    match raw {
+        "cloudflare" => DnsProviderType::Cloudflare,
+        "digitalocean" => DnsProviderType::DigitalOcean,
+        "route53" => DnsProviderType::Route53,
+        _ => DnsProviderType::Manual,
+    }
+}
+
+fn provider_zone_override(provider: &DnsProvider) -> Option<String> {
+    provider
+        .config_json
+        .as_ref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.get("zone").and_then(|zone| zone.as_str().map(|s| s.to_string())))
+}
+
+fn poll_txt_propagation(record_name: &str, value: &str) -> Result<PropagationDto, anyhow::Error> {
+    let timeout = Duration::from_secs(30);
+    let interval = Duration::from_secs(2);
+    let started = Instant::now();
+    let mut last = check_txt_record(record_name, value)?;
+    loop {
+        if matches!(last.state, crate::issuance::dns::PropagationState::Found) {
+            return Ok(last);
+        }
+        if started.elapsed() >= timeout {
+            return Ok(last);
+        }
+        std::thread::sleep(interval);
+        last = check_txt_record(record_name, value)?;
     }
 }
 

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -6,19 +7,30 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OpenFlags, Row};
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
-pub struct DnsZoneMapping {
-    pub hostname_pattern: String,
-    pub zone: Option<String>,
-    pub adapter_id: String,
+pub struct DnsProvider {
+    pub id: String,
+    pub provider_type: String,
+    pub label: String,
+    pub domain_suffixes: Vec<String>,
     pub secret_ref: Option<String>,
+    pub config_json: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// Stores hostname → zone → adapter mappings for DNS challenges.
+#[derive(Clone, Debug)]
+pub struct DnsProviderResolution {
+    pub provider: Option<DnsProvider>,
+    pub matched_suffix: Option<String>,
+    pub ambiguous: Vec<DnsProvider>,
+}
+
+/// Stores DNS provider configurations and resolves providers for DNS challenges.
 #[derive(Clone)]
 pub struct DnsConfigStore {
     conn: Arc<Mutex<Connection>>,
@@ -43,77 +55,194 @@ impl DnsConfigStore {
 
         Self::configure_connection(&conn)?;
         Self::init_schema(&conn)?;
-        Self::seed_defaults(&conn)?;
+        Self::migrate_zone_mappings(&conn)?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
 
-    pub fn upsert_mapping(
-        &self,
-        hostname_pattern: &str,
-        zone: Option<String>,
-        adapter_id: &str,
-        secret_ref: Option<String>,
-    ) -> Result<DnsZoneMapping> {
-        let conn = self.lock_conn()?;
-        let now = Utc::now().to_rfc3339();
-
-        conn.execute(
-            r#"
-            INSERT INTO dns_zone_mappings (hostname_pattern, zone, adapter_id, secret_ref, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-            ON CONFLICT(hostname_pattern) DO UPDATE SET
-                zone = excluded.zone,
-                adapter_id = excluded.adapter_id,
-                secret_ref = excluded.secret_ref,
-                updated_at = excluded.updated_at
-            "#,
-            params![hostname_pattern, zone, adapter_id, secret_ref, now],
-        )?;
-
-        self.get(hostname_pattern)?
-            .ok_or_else(|| anyhow!("mapping not found after upsert: {hostname_pattern}"))
-    }
-
-    pub fn get(&self, hostname_pattern: &str) -> Result<Option<DnsZoneMapping>> {
+    pub fn list_providers(&self) -> Result<Vec<DnsProvider>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT hostname_pattern, zone, adapter_id, secret_ref, created_at, updated_at
-            FROM dns_zone_mappings
-            WHERE hostname_pattern = ?1
-            "#,
-        )?;
-
-        let mut rows = stmt.query(params![hostname_pattern])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(Self::row_to_record(row)?))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Finds the longest-suffix match for a given hostname.
-    pub fn find_for_hostname(&self, hostname: &str) -> Result<Option<DnsZoneMapping>> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT hostname_pattern, zone, adapter_id, secret_ref, created_at, updated_at
-            FROM dns_zone_mappings
-            ORDER BY length(hostname_pattern) DESC
+            SELECT id, provider_type, label, domain_suffixes, secret_ref, config_json, created_at, updated_at
+            FROM dns_providers
+            ORDER BY created_at DESC
             "#,
         )?;
 
         let mut rows = stmt.query([])?;
+        let mut providers = Vec::new();
         while let Some(row) = rows.next()? {
-            let record = Self::row_to_record(row)?;
-            if record.hostname_pattern == "*" || hostname.ends_with(&record.hostname_pattern) {
-                return Ok(Some(record));
+            providers.push(Self::row_to_provider(row)?);
+        }
+        Ok(providers)
+    }
+
+    pub fn get_provider(&self, provider_id: &str) -> Result<Option<DnsProvider>> {
+        let conn = self.lock_conn()?;
+        Self::get_provider_with_conn(&conn, provider_id)
+    }
+
+    pub fn create_provider(
+        &self,
+        provider_type: String,
+        label: String,
+        domain_suffixes: Vec<String>,
+        secret_ref: Option<String>,
+        config: Option<Value>,
+    ) -> Result<DnsProvider> {
+        let conn = self.lock_conn()?;
+        let now = Utc::now().to_rfc3339();
+        let provider_id = format!("dns_prov_{}", Uuid::new_v4().as_simple());
+        let domain_suffixes_json =
+            serde_json::to_string(&domain_suffixes).context("failed to serialize suffixes")?;
+        let config_json = match config {
+            Some(value) => Some(
+                serde_json::to_string(&value).context("failed to serialize provider config")?,
+            ),
+            None => None,
+        };
+
+        conn.execute(
+            r#"
+            INSERT INTO dns_providers (
+                id, provider_type, label, domain_suffixes, secret_ref, config_json, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+            "#,
+            params![
+                provider_id,
+                provider_type,
+                label,
+                domain_suffixes_json,
+                secret_ref,
+                config_json,
+                now
+            ],
+        )?;
+
+        Self::get_provider_with_conn(&conn, &provider_id)?
+            .ok_or_else(|| anyhow!("provider not found after create: {provider_id}"))
+    }
+
+    pub fn update_provider(
+        &self,
+        provider_id: &str,
+        label: String,
+        domain_suffixes: Vec<String>,
+        config: Option<Value>,
+    ) -> Result<DnsProvider> {
+        let conn = self.lock_conn()?;
+        let now = Utc::now().to_rfc3339();
+        let domain_suffixes_json =
+            serde_json::to_string(&domain_suffixes).context("failed to serialize suffixes")?;
+        let config_json = match config {
+            Some(value) => Some(
+                serde_json::to_string(&value).context("failed to serialize provider config")?,
+            ),
+            None => None,
+        };
+
+        let updated = conn.execute(
+            r#"
+            UPDATE dns_providers
+            SET label = ?2,
+                domain_suffixes = ?3,
+                config_json = ?4,
+                updated_at = ?5
+            WHERE id = ?1
+            "#,
+            params![provider_id, label, domain_suffixes_json, config_json, now],
+        )?;
+
+        if updated == 0 {
+            return Err(anyhow!("provider not found when updating: {provider_id}"));
+        }
+
+        Self::get_provider_with_conn(&conn, provider_id)?
+            .ok_or_else(|| anyhow!("provider not found after update: {provider_id}"))
+    }
+
+    pub fn update_provider_secret_ref(
+        &self,
+        provider_id: &str,
+        secret_ref: Option<String>,
+    ) -> Result<DnsProvider> {
+        let conn = self.lock_conn()?;
+        let now = Utc::now().to_rfc3339();
+        let updated = conn.execute(
+            r#"
+            UPDATE dns_providers
+            SET secret_ref = ?2,
+                updated_at = ?3
+            WHERE id = ?1
+            "#,
+            params![provider_id, secret_ref, now],
+        )?;
+        if updated == 0 {
+            return Err(anyhow!("provider not found when updating secret: {provider_id}"));
+        }
+        Self::get_provider_with_conn(&conn, provider_id)?
+            .ok_or_else(|| anyhow!("provider not found after secret update: {provider_id}"))
+    }
+
+    pub fn delete_provider(&self, provider_id: &str) -> Result<DnsProvider> {
+        let conn = self.lock_conn()?;
+        let existing = Self::get_provider_with_conn(&conn, provider_id)?
+            .ok_or_else(|| anyhow!("provider not found when deleting: {provider_id}"))?;
+        conn.execute("DELETE FROM dns_providers WHERE id = ?1", params![provider_id])?;
+        Ok(existing)
+    }
+
+    pub fn resolve_provider_for_domain(&self, hostname: &str) -> Result<DnsProviderResolution> {
+        let providers = self.list_providers()?;
+        let normalized = normalize_hostname(hostname);
+        let mut matches: Vec<(DnsProvider, String)> = Vec::new();
+
+        for provider in providers {
+            for suffix in &provider.domain_suffixes {
+                if matches_suffix(&normalized, suffix) {
+                    matches.push((provider.clone(), suffix.clone()));
+                }
             }
         }
-        Ok(None)
+
+        if matches.is_empty() {
+            return Ok(DnsProviderResolution {
+                provider: None,
+                matched_suffix: None,
+                ambiguous: vec![],
+            });
+        }
+
+        matches.sort_by(|(a_provider, a_suffix), (b_provider, b_suffix)| {
+            b_suffix
+                .len()
+                .cmp(&a_suffix.len())
+                .then_with(|| a_provider.id.cmp(&b_provider.id))
+        });
+
+        let best_suffix_len = matches
+            .first()
+            .map(|(_, suffix)| suffix.len())
+            .unwrap_or_default();
+        let ambiguous: Vec<DnsProvider> = matches
+            .iter()
+            .filter(|(_, suffix)| suffix.len() == best_suffix_len)
+            .map(|(provider, _)| provider.clone())
+            .collect();
+
+        let (provider, matched_suffix) = matches
+            .first()
+            .map(|(provider, suffix)| (provider.clone(), suffix.clone()))
+            .unwrap();
+
+        Ok(DnsProviderResolution {
+            provider: Some(provider),
+            matched_suffix: Some(matched_suffix),
+            ambiguous,
+        })
     }
 
     fn configure_connection(conn: &Connection) -> Result<()> {
@@ -129,11 +258,13 @@ impl DnsConfigStore {
     fn init_schema(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             r#"
-            CREATE TABLE IF NOT EXISTS dns_zone_mappings (
-                hostname_pattern TEXT PRIMARY KEY,
-                zone TEXT,
-                adapter_id TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS dns_providers (
+                id TEXT PRIMARY KEY,
+                provider_type TEXT NOT NULL,
+                label TEXT NOT NULL,
+                domain_suffixes TEXT NOT NULL,
                 secret_ref TEXT,
+                config_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -142,27 +273,136 @@ impl DnsConfigStore {
         Ok(())
     }
 
-    fn seed_defaults(conn: &Connection) -> Result<()> {
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
+    fn migrate_zone_mappings(conn: &Connection) -> Result<()> {
+        if !Self::table_exists(conn, "dns_zone_mappings")? {
+            return Ok(());
+        }
+        let provider_count = Self::table_count(conn, "dns_providers")?;
+        if provider_count > 0 {
+            return Ok(());
+        }
+
+        let mut stmt = conn.prepare(
             r#"
-            INSERT OR IGNORE INTO dns_zone_mappings (
-                hostname_pattern, zone, adapter_id, secret_ref, created_at, updated_at
-            ) VALUES ('*', NULL, 'manual', NULL, ?1, ?1)
+            SELECT hostname_pattern, zone, adapter_id, secret_ref, created_at, updated_at
+            FROM dns_zone_mappings
             "#,
-            params![now],
         )?;
+        let mut rows = stmt.query([])?;
+        let mut groups: HashMap<(String, Option<String>), LegacyProvider> = HashMap::new();
+
+        while let Some(row) = rows.next()? {
+            let pattern: String = row.get(0)?;
+            let zone: Option<String> = row.get(1)?;
+            let adapter_id: String = row.get(2)?;
+            let secret_ref: Option<String> = row.get(3)?;
+            let created_at_raw: String = row.get(4)?;
+            let updated_at_raw: String = row.get(5)?;
+
+            if pattern.trim() == "*" {
+                continue;
+            }
+
+            let suffix = normalize_suffix(&pattern);
+            if suffix.is_empty() {
+                continue;
+            }
+
+            let created_at = DateTime::parse_from_rfc3339(&created_at_raw)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+            let updated_at = DateTime::parse_from_rfc3339(&updated_at_raw)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+
+            let entry = groups
+                .entry((adapter_id.clone(), secret_ref.clone()))
+                .or_insert_with(|| LegacyProvider::new(adapter_id.clone(), secret_ref.clone()));
+            entry.domain_suffixes.push(suffix);
+            entry.created_at = entry.created_at.min(created_at);
+            entry.updated_at = entry.updated_at.max(updated_at);
+            if entry.zone_override.is_none() {
+                entry.zone_override = zone.clone();
+            }
+        }
+
+        for (index, (_, legacy)) in groups.into_iter().enumerate() {
+            let mut suffixes = legacy.domain_suffixes;
+            suffixes.sort();
+            suffixes.dedup();
+            if suffixes.is_empty() {
+                continue;
+            }
+
+            let label = if index == 0 {
+                format!("Migrated {}", legacy.adapter_id)
+            } else {
+                format!("Migrated {} ({})", legacy.adapter_id, index + 1)
+            };
+
+            let config_json = legacy
+                .zone_override
+                .map(|zone| serde_json::json!({ "zone": zone }))
+                .and_then(|value| serde_json::to_string(&value).ok());
+
+            let suffixes_json =
+                serde_json::to_string(&suffixes).context("failed to serialize suffixes")?;
+            conn.execute(
+                r#"
+                INSERT INTO dns_providers (
+                    id, provider_type, label, domain_suffixes, secret_ref, config_json, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "#,
+                params![
+                    format!("dns_prov_{}", Uuid::new_v4().as_simple()),
+                    legacy.adapter_id,
+                    label,
+                    suffixes_json,
+                    legacy.secret_ref,
+                    config_json,
+                    legacy.created_at.to_rfc3339(),
+                    legacy.updated_at.to_rfc3339()
+                ],
+            )?;
+        }
+
         Ok(())
     }
 
-    fn row_to_record(row: &Row<'_>) -> Result<DnsZoneMapping> {
-        let created_at_raw: String = row.get(4)?;
-        let updated_at_raw: String = row.get(5)?;
-        Ok(DnsZoneMapping {
-            hostname_pattern: row.get(0)?,
-            zone: row.get(1)?,
-            adapter_id: row.get(2)?,
-            secret_ref: row.get(3)?,
+    fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = ?1
+            "#,
+        )?;
+        let mut rows = stmt.query(params![table])?;
+        Ok(rows.next()?.is_some())
+    }
+
+    fn table_count(conn: &Connection, table: &str) -> Result<i64> {
+        let count = conn.query_row(
+            &format!("SELECT COUNT(1) FROM {table}"),
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    fn row_to_provider(row: &Row<'_>) -> Result<DnsProvider> {
+        let created_at_raw: String = row.get(6)?;
+        let updated_at_raw: String = row.get(7)?;
+        let domain_suffixes_raw: String = row.get(3)?;
+        let domain_suffixes: Vec<String> =
+            serde_json::from_str(&domain_suffixes_raw).unwrap_or_default();
+
+        Ok(DnsProvider {
+            id: row.get(0)?,
+            provider_type: row.get(1)?,
+            label: row.get(2)?,
+            domain_suffixes,
+            secret_ref: row.get(4)?,
+            config_json: row.get(5)?,
             created_at: chrono::DateTime::parse_from_rfc3339(&created_at_raw)
                 .map(|dt| dt.with_timezone(&Utc))
                 .context("failed to parse created_at")?,
@@ -172,9 +412,83 @@ impl DnsConfigStore {
         })
     }
 
+    fn get_provider_with_conn(
+        conn: &Connection,
+        provider_id: &str,
+    ) -> Result<Option<DnsProvider>> {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, provider_type, label, domain_suffixes, secret_ref, config_json, created_at, updated_at
+            FROM dns_providers
+            WHERE id = ?1
+            "#,
+        )?;
+        let mut rows = stmt.query(params![provider_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_provider(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
         self.conn
             .lock()
             .map_err(|err| anyhow!("SQLite connection poisoned: {err}"))
     }
+}
+
+#[derive(Clone, Debug)]
+struct LegacyProvider {
+    adapter_id: String,
+    secret_ref: Option<String>,
+    domain_suffixes: Vec<String>,
+    zone_override: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl LegacyProvider {
+    fn new(adapter_id: String, secret_ref: Option<String>) -> Self {
+        let now = Utc::now();
+        Self {
+            adapter_id,
+            secret_ref,
+            domain_suffixes: Vec::new(),
+            zone_override: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+pub fn parse_domain_suffixes(raw: &str) -> Vec<String> {
+    let mut suffixes: Vec<String> = raw
+        .split(|ch: char| ch == ',' || ch.is_whitespace())
+        .map(normalize_suffix)
+        .filter(|suffix| !suffix.is_empty())
+        .collect();
+    suffixes.sort();
+    suffixes.dedup();
+    suffixes
+}
+
+fn normalize_suffix(raw: &str) -> String {
+    raw.trim()
+        .trim_start_matches("*.")
+        .trim_start_matches('.')
+        .trim_end_matches('.')
+        .to_ascii_lowercase()
+}
+
+fn normalize_hostname(hostname: &str) -> String {
+    hostname.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+fn matches_suffix(hostname: &str, suffix: &str) -> bool {
+    let suffix = normalize_suffix(suffix);
+    if suffix.is_empty() {
+        return false;
+    }
+    hostname == suffix || hostname.ends_with(&format!(".{suffix}"))
 }
