@@ -24,8 +24,6 @@ pub struct AccountState {
 pub enum AcmeIssuerError {
     #[error("account email is required to create or update an ACME account")]
     MissingEmail,
-    #[error("issuer is disabled")]
-    Disabled,
     #[error("secret error: {0}")]
     Secret(String),
     #[error("secret reference has wrong kind: expected {expected}, found {found}")]
@@ -49,10 +47,6 @@ impl<'a> AcmeIssuer<'a> {
         account_key_ref: Option<String>,
         generate_new_account_key: bool,
     ) -> Result<AccountState, AcmeIssuerError> {
-        if self.config.disabled {
-            return Err(AcmeIssuerError::Disabled);
-        }
-
         let email = contact_email
             .or_else(|| self.config.contact_email.clone())
             .ok_or(AcmeIssuerError::MissingEmail)?;

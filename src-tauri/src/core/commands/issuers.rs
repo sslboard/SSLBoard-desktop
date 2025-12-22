@@ -2,10 +2,13 @@ use tauri::{async_runtime::spawn_blocking, State};
 
 use crate::core::types::{
     CreateIssuerRequest, DeleteIssuerRequest, IssuerConfigDto, IssuerEnvironment, IssuerType,
-    SelectIssuerRequest, SetIssuerDisabledRequest, UpdateIssuerRequest,
+    SelectIssuerRequest, UpdateIssuerRequest,
 };
 use crate::issuance::acme::generate_account_key_pem;
-use crate::secrets::{manager::SecretManager, types::SecretKind};
+use crate::secrets::{
+    manager::{SecretError, SecretManager},
+    types::SecretKind,
+};
 use crate::storage::issuer::IssuerConfigStore;
 
 /// Lists issuer configurations, including the selected issuer.
@@ -142,22 +145,6 @@ pub async fn update_issuer(
     .map_err(|err: anyhow::Error| err.to_string())
 }
 
-/// Enables or disables an issuer entry.
-#[tauri::command]
-pub async fn set_issuer_disabled(
-    store: State<'_, IssuerConfigStore>,
-    req: SetIssuerDisabledRequest,
-) -> Result<IssuerConfigDto, String> {
-    let store = store.inner().clone();
-    spawn_blocking(move || {
-        let record = store.set_disabled(&req.issuer_id, req.disabled)?;
-        Ok(issuer_record_to_dto(record))
-    })
-    .await
-    .map_err(|err| format!("Set issuer disabled join error: {err}"))?
-    .map_err(|err: anyhow::Error| err.to_string())
-}
-
 /// Deletes an issuer entry and its associated account key if present.
 #[tauri::command]
 pub async fn delete_issuer(
@@ -171,12 +158,14 @@ pub async fn delete_issuer(
         let record = store
             .get(&req.issuer_id)?
             .ok_or_else(|| anyhow::anyhow!("issuer not found: {}", req.issuer_id))?;
-        store.delete(&req.issuer_id)?;
         if let Some(account_key_ref) = record.account_key_ref {
-            secrets
-                .delete_secret(&account_key_ref)
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            match secrets.delete_secret(&account_key_ref) {
+                Ok(()) => {}
+                Err(SecretError::NotFound(_)) => {}
+                Err(err) => return Err(anyhow::anyhow!(err.to_string())),
+            }
         }
+        store.delete(&req.issuer_id)?;
         Ok(req.issuer_id)
     })
     .await
@@ -204,7 +193,6 @@ fn issuer_record_to_dto(record: crate::storage::issuer::IssuerConfigRecord) -> I
         account_key_ref: record.account_key_ref,
         tos_agreed: record.tos_agreed,
         is_selected: record.is_selected,
-        disabled: record.disabled,
     }
 }
 

@@ -13,7 +13,6 @@ export type IssuerConfig = {
   account_key_ref?: string | null;
   tos_agreed: boolean;
   is_selected: boolean;
-  disabled: boolean;
 };
 
 export type CreateIssuerRequest = {
@@ -32,11 +31,6 @@ export type UpdateIssuerRequest = {
   directory_url: string;
   contact_email?: string;
   tos_agreed: boolean;
-};
-
-export type SetIssuerDisabledRequest = {
-  issuer_id: string;
-  disabled: boolean;
 };
 
 export type DeleteIssuerRequest = {
@@ -61,12 +55,6 @@ export async function updateIssuer(
   req: UpdateIssuerRequest,
 ): Promise<IssuerConfig> {
   return invoke<IssuerConfig>("update_issuer", { req });
-}
-
-export async function setIssuerDisabled(
-  req: SetIssuerDisabledRequest,
-): Promise<IssuerConfig> {
-  return invoke<IssuerConfig>("set_issuer_disabled", { req });
 }
 
 export async function deleteIssuer(

@@ -5,7 +5,6 @@ import {
   createIssuer,
   deleteIssuer,
   listIssuers,
-  setIssuerDisabled,
   updateIssuer,
   type IssuerConfig,
   type IssuerEnvironment,
@@ -160,26 +159,6 @@ export function IssuerManager() {
     setIssuerFormError(null);
   }
 
-  async function handleToggleIssuerDisabled(issuer: IssuerConfig) {
-    setIssuerError(null);
-    setIssuerLoading(true);
-    try {
-      const updated = await setIssuerDisabled({
-        issuer_id: issuer.issuer_id,
-        disabled: !issuer.disabled,
-      });
-      setIssuers((prev) =>
-        prev.map((entry) =>
-          entry.issuer_id === updated.issuer_id ? updated : entry,
-        ),
-      );
-    } catch (err) {
-      setIssuerError(normalizeError(err));
-    } finally {
-      setIssuerLoading(false);
-    }
-  }
-
   async function handleDeleteIssuer(issuer: IssuerConfig) {
     if (issuerLoading) return;
     setIssuerError(null);
@@ -218,7 +197,7 @@ export function IssuerManager() {
         <div>
           <div className="text-sm font-semibold">Issuer management</div>
           <p className="text-xs text-muted-foreground">
-            Add, edit, or disable issuer entries. ACME issuers require contact email and ToS acceptance.
+            Add or edit issuer entries. ACME issuers require contact email and ToS acceptance.
           </p>
         </div>
         {issuerFormMode === "edit" ? (
@@ -256,11 +235,6 @@ export function IssuerManager() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                     {issuer.label}
-                    {issuer.disabled ? (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        Disabled
-                      </span>
-                    ) : null}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     {formatIssuerType(issuer.issuer_type)} · {formatEnvironment(issuer.environment)} ·{" "}
@@ -279,16 +253,6 @@ export function IssuerManager() {
                     disabled={issuerLoading}
                   >
                     Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={issuer.disabled ? "" : "text-destructive hover:bg-destructive/10"}
-                    onClick={() => void handleToggleIssuerDisabled(issuer)}
-                    disabled={issuerLoading}
-                  >
-                    {issuer.disabled ? "Enable" : "Disable"}
                   </Button>
                   <Button
                     type="button"

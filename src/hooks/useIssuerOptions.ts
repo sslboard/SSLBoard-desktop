@@ -17,9 +17,7 @@ export function useIssuerOptions() {
         const issuerList = await listIssuers();
         if (!active) return;
         setIssuers(issuerList);
-        setSelectedIssuer(
-          issuerList.find((issuer) => !issuer.disabled) ?? issuerList[0] ?? null,
-        );
+        setSelectedIssuer(issuerList[0] ?? null);
       } catch (err) {
         if (active) {
           setIssuerError(normalizeError(err, "Failed to load issuers."));
@@ -38,9 +36,7 @@ export function useIssuerOptions() {
 
   useEffect(() => {
     if (!selectedIssuer && issuers.length > 0) {
-      setSelectedIssuer(
-        issuers.find((issuer) => !issuer.disabled) ?? issuers[0] ?? null,
-      );
+      setSelectedIssuer(issuers[0] ?? null);
     }
   }, [issuers, selectedIssuer]);
 

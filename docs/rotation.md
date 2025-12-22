@@ -4,14 +4,13 @@ This project keeps secrets inside the Rust core with only reference IDs exposed 
 
 ## ACME account keys (staging vs production)
 - Maintain **separate account keys per environment** (staging vs production). Never reuse a staging key for production.
-- Default stance: **long-lived keys**, rotated only for: suspected compromise, ownership/organization changes, or when transferring accounts to a new custodian.
-- Rotation flow:
-  1) Generate a new account key via SecretStore (or import an existing ref). Keep the old ref until verification succeeds.
-  2) Update issuer settings to point to the new ref and re-run `ensure_account` to register/verify.
-  3) After confirmation, delete the old secret ref to avoid orphaned credentials.
+- **Do not rotate ACME account keys.** These keys are long-lived and should remain unchanged to preserve the ability to revoke certificates issued under the account. Rotating an ACME account key would create a new account, losing access to revoke certificates issued with the previous account key.
+- If an ACME account key is compromised or must be replaced:
+  - Create a new issuer configuration with a new account key (this creates a new ACME account).
+  - Note that certificates issued under the old account cannot be revoked from the new account.
+  - Consider the security implications before abandoning an account key.
 - Safety rules:
   - UI never receives raw key bytes; all operations use secret references.
-  - Staging rotation is safe to practice; production rotation should require explicit opt-in in UI copy.
   - Record the ref ID and timestamp for auditability (e.g., in metadata tables or logs when added).
 
 ## Managed private keys (issued certificates)

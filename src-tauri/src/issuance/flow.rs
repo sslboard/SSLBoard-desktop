@@ -101,9 +101,6 @@ pub fn start_managed_dns01(
     let issuer = issuer_store
         .get(&issuer_id)?
         .ok_or_else(|| anyhow!("Issuer not found: {}", issuer_id))?;
-    if issuer.disabled {
-        return Err(anyhow!("Issuer is disabled: {}", issuer_id));
-    }
     if !issuer.tos_agreed {
         return Err(anyhow!(
             "Issuer requires Terms of Service acceptance before issuance"

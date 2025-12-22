@@ -56,8 +56,7 @@ export function IssuePage() {
     selectedIssuer &&
       selectedIssuer.contact_email &&
       selectedIssuer.account_key_ref &&
-      selectedIssuer.tos_agreed &&
-      !selectedIssuer.disabled,
+      selectedIssuer.tos_agreed,
   );
 
   function handleSelectIssuer(issuerId: string) {
@@ -199,10 +198,8 @@ export function IssuePage() {
               <option
                 key={issuer.issuer_id}
                 value={issuer.issuer_id}
-                disabled={issuer.disabled}
               >
                 {issuer.label}
-                {issuer.disabled ? " (disabled)" : ""}
               </option>
             ))}
           </select>
@@ -292,7 +289,7 @@ export function IssuePage() {
           </div>
           {!issuerReady ? (
             <p className="text-xs text-muted-foreground">
-              Select an enabled issuer and configure its ACME details in Settings before starting issuance.
+              Configure the issuer&apos;s ACME details in Settings before starting issuance.
             </p>
           ) : null}
 

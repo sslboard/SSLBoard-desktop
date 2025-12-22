@@ -28,7 +28,6 @@ pub struct IssuerConfigRecord {
     pub account_key_ref: Option<String>,
     pub tos_agreed: bool,
     pub is_selected: bool,
-    pub disabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -40,9 +39,6 @@ pub struct IssuerConfigStore {
 }
 
 impl IssuerConfigStore {
-    const STAGING_ID: &'static str = "acme_le_staging";
-    const PROD_ID: &'static str = "acme_le_prod";
-
     pub fn initialize(app: AppHandle) -> Result<Self> {
         let data_dir = app
             .path()
@@ -63,7 +59,6 @@ impl IssuerConfigStore {
         Self::init_schema(&conn)?;
         Self::ensure_columns(&conn)?;
         Self::backfill_params_json(&conn)?;
-        Self::bootstrap_defaults(&conn)?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -73,14 +68,7 @@ impl IssuerConfigStore {
     pub fn list(&self) -> Result<Vec<IssuerConfigRecord>> {
         eprintln!("[issuer_store] list() begin");
         let conn = self.lock_conn()?;
-        let mut records = Self::query_all(&conn)?;
-
-        // Repair/reset defaults if the table was wiped or no issuers exist.
-        if records.is_empty() {
-            eprintln!("[issuer_store] no rows found, bootstrapping defaults");
-            Self::bootstrap_defaults(&conn)?;
-            records = Self::query_all(&conn)?;
-        }
+        let records = Self::query_all(&conn)?;
 
         eprintln!(
             "[issuer_store] list() returning {} records (selected: {:?})",
@@ -117,8 +105,8 @@ impl IssuerConfigStore {
             r#"
             INSERT INTO issuer_configs (
                 issuer_id, label, directory_url, environment, issuer_type, params_json,
-                contact_email, account_key_ref, tos_agreed, is_selected, disabled, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, 0, ?10, ?10)
+                contact_email, account_key_ref, tos_agreed, is_selected, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?10)
             "#,
             params![
                 issuer_id,
@@ -183,33 +171,18 @@ impl IssuerConfigStore {
             .ok_or_else(|| anyhow!("issuer not found after update: {issuer_id}"))
     }
 
-    pub fn set_disabled(&self, issuer_id: &str, disabled: bool) -> Result<IssuerConfigRecord> {
-        let conn = self.lock_conn()?;
-        let updated = conn.execute(
-            "UPDATE issuer_configs SET disabled = ?2, updated_at = ?3 WHERE issuer_id = ?1",
-            params![issuer_id, if disabled { 1 } else { 0 }, Utc::now().to_rfc3339()],
-        )?;
-        if updated == 0 {
-            return Err(anyhow!("issuer not found when updating disabled state: {issuer_id}"));
-        }
-
-        Self::get_with_conn(&conn, issuer_id)?
-            .ok_or_else(|| anyhow!("issuer not found after disabled update: {issuer_id}"))
-    }
-
     /// Sets the selected issuer, ensuring only one issuer is marked selected.
     pub fn set_selected(&self, issuer_id: &str) -> Result<IssuerConfigRecord> {
         eprintln!("[issuer_store] set_selected({issuer_id})");
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
 
-        let exists: i64 = tx.query_row(
-            "SELECT COUNT(1) FROM issuer_configs WHERE issuer_id = ?1 AND disabled = 0",
-            params![issuer_id],
-            |row| row.get(0),
-        )?;
+        let exists: i64 =
+            tx.query_row("SELECT COUNT(1) FROM issuer_configs WHERE issuer_id = ?1", params![issuer_id], |row| {
+                row.get(0)
+            })?;
         if exists == 0 {
-            return Err(anyhow!("issuer not found or disabled: {issuer_id}"));
+            return Err(anyhow!("issuer not found: {issuer_id}"));
         }
 
         tx.execute("UPDATE issuer_configs SET is_selected = 0", [])?;
@@ -267,8 +240,7 @@ impl IssuerConfigStore {
         let mut stmt = conn.prepare(
             r#"
             SELECT issuer_id, label, directory_url, environment, issuer_type, params_json,
-                   contact_email, account_key_ref, tos_agreed, is_selected, disabled,
-                   created_at, updated_at
+                   contact_email, account_key_ref, tos_agreed, is_selected, created_at, updated_at
             FROM issuer_configs
             ORDER BY created_at ASC
             "#,
@@ -286,8 +258,7 @@ impl IssuerConfigStore {
         let mut stmt = conn.prepare(
             r#"
             SELECT issuer_id, label, directory_url, environment, issuer_type, params_json,
-                   contact_email, account_key_ref, tos_agreed, is_selected, disabled,
-                   created_at, updated_at
+                   contact_email, account_key_ref, tos_agreed, is_selected, created_at, updated_at
             FROM issuer_configs
             WHERE issuer_id = ?1
             "#,
@@ -315,7 +286,6 @@ impl IssuerConfigStore {
                 account_key_ref TEXT,
                 tos_agreed INTEGER NOT NULL DEFAULT 0,
                 is_selected INTEGER NOT NULL DEFAULT 0,
-                disabled INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -373,60 +343,9 @@ impl IssuerConfigStore {
         Ok(())
     }
 
-    fn bootstrap_defaults(conn: &Connection) -> Result<()> {
-        let now = Utc::now().to_rfc3339();
-        let staging_url = "https://acme-staging-v02.api.letsencrypt.org/directory";
-        let prod_url = "https://acme-v02.api.letsencrypt.org/directory";
-        let staging_params = Self::build_params_json(staging_url, "staging")?;
-        let prod_params = Self::build_params_json(prod_url, "production")?;
-
-        // Ensure staging row exists.
-        conn.execute(
-            r#"
-            INSERT OR IGNORE INTO issuer_configs (
-                issuer_id, label, directory_url, environment, issuer_type, params_json,
-                contact_email, account_key_ref, tos_agreed, is_selected, disabled, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, 'staging', 'acme', ?4, NULL, NULL, 0, 1, 0, ?5, ?5)
-            "#,
-            params![
-                Self::STAGING_ID,
-                "Let's Encrypt (Staging)",
-                staging_url,
-                staging_params,
-                now
-            ],
-        )?;
-
-        // Ensure production row exists but disabled by default.
-        conn.execute(
-            r#"
-            INSERT OR IGNORE INTO issuer_configs (
-                issuer_id, label, directory_url, environment, issuer_type, params_json,
-                contact_email, account_key_ref, tos_agreed, is_selected, disabled, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, 'production', 'acme', ?4, NULL, NULL, 0, 0, 1, ?5, ?5)
-            "#,
-            params![Self::PROD_ID, "Let's Encrypt (Production)", prod_url, prod_params, now],
-        )?;
-
-        // Ensure at least one issuer is marked selected.
-        let selected_count: i64 = conn.query_row(
-            "SELECT COUNT(1) FROM issuer_configs WHERE is_selected = 1 AND disabled = 0",
-            [],
-            |row| row.get(0),
-        )?;
-        if selected_count == 0 {
-            conn.execute(
-                "UPDATE issuer_configs SET is_selected = 1 WHERE issuer_id = ?1",
-                params![Self::STAGING_ID],
-            )?;
-        }
-
-        Ok(())
-    }
-
     fn row_to_record(row: &Row<'_>) -> Result<IssuerConfigRecord> {
-        let created_at_raw: String = row.get(11)?;
-        let updated_at_raw: String = row.get(12)?;
+        let created_at_raw: String = row.get(10)?;
+        let updated_at_raw: String = row.get(11)?;
 
         Ok(IssuerConfigRecord {
             issuer_id: row.get(0)?,
@@ -439,7 +358,6 @@ impl IssuerConfigStore {
             account_key_ref: row.get(7)?,
             tos_agreed: row.get::<_, i64>(8)? != 0,
             is_selected: row.get::<_, i64>(9)? != 0,
-            disabled: row.get::<_, i64>(10)? != 0,
             created_at: chrono::DateTime::parse_from_rfc3339(&created_at_raw)
                 .map(|dt| dt.with_timezone(&Utc))
                 .context("failed to parse created_at")?,

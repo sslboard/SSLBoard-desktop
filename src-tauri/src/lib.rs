@@ -9,7 +9,7 @@ use core::commands::{
     dns_provider_test, dns_provider_update, dns_provider_validate_token, dns_resolve_provider,
     get_certificate, greet, is_vault_unlocked, list_certificates, list_issuers, list_secret_refs,
     lock_vault, prepare_dns_challenge, seed_fake_certificate, select_issuer,
-    set_issuer_disabled, start_managed_issuance, unlock_vault, update_issuer,
+    start_managed_issuance, unlock_vault, update_issuer,
     update_secret_ref,
 };
 use secrets::manager::SecretManager;
@@ -54,7 +54,6 @@ pub fn run() {
             select_issuer,
             create_issuer,
             update_issuer,
-            set_issuer_disabled,
             delete_issuer,
             prepare_dns_challenge,
             check_dns_propagation,

@@ -87,7 +87,6 @@ pub struct IssuerConfigDto {
     pub account_key_ref: Option<String>,
     pub tos_agreed: bool,
     pub is_selected: bool,
-    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -113,12 +112,6 @@ pub struct UpdateIssuerRequest {
     pub directory_url: String,
     pub contact_email: Option<String>,
     pub tos_agreed: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SetIssuerDisabledRequest {
-    pub issuer_id: String,
-    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

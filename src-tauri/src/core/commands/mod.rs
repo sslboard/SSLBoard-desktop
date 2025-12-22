@@ -14,8 +14,7 @@ pub use dns_providers::{
 pub use inventory::{get_certificate, list_certificates, seed_fake_certificate};
 pub use issuance::{complete_managed_issuance, start_managed_issuance};
 pub use issuers::{
-    create_issuer, delete_issuer, list_issuers, select_issuer, set_issuer_disabled,
-    update_issuer,
+    create_issuer, delete_issuer, list_issuers, select_issuer, update_issuer,
 };
 pub use misc::greet;
 pub use secrets::{

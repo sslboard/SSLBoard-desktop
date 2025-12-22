@@ -9,7 +9,10 @@ use crate::core::types::{
 };
 use crate::issuance::dns::check_txt_record;
 use crate::issuance::dns_providers::adapter_for_provider;
-use crate::secrets::{manager::SecretManager, types::SecretKind};
+use crate::secrets::{
+    manager::{SecretError, SecretManager},
+    types::SecretKind,
+};
 use crate::storage::dns::{parse_domain_suffixes, DnsConfigStore, DnsProvider};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -216,12 +219,17 @@ pub async fn dns_provider_delete(
     let store = store.inner().clone();
     let secrets = secrets.inner().clone();
     spawn_blocking(move || -> Result<String, anyhow::Error> {
-        let record = store.delete_provider(&req.provider_id)?;
+        let record = store
+            .get_provider(&req.provider_id)?
+            .ok_or_else(|| anyhow::anyhow!("provider not found: {}", req.provider_id))?;
         for secret_ref in &record.secret_refs {
-            if let Err(err) = secrets.delete_secret(secret_ref) {
-                eprintln!("Warning: failed to delete secret {}: {}", secret_ref, err);
+            match secrets.delete_secret(secret_ref) {
+                Ok(()) => {}
+                Err(SecretError::NotFound(_)) => {}
+                Err(err) => return Err(anyhow::anyhow!(err.to_string())),
             }
         }
+        store.delete_provider(&req.provider_id)?;
         Ok(req.provider_id)
     })
     .await
