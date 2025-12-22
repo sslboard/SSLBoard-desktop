@@ -223,40 +223,6 @@ impl IssuerConfigStore {
             .ok_or_else(|| anyhow!("issuer not found after select: {issuer_id}"))
     }
 
-    pub fn upsert_account_state(
-        &self,
-        issuer_id: &str,
-        contact_email: Option<String>,
-        account_key_ref: Option<String>,
-    ) -> Result<IssuerConfigRecord> {
-        eprintln!(
-            "[issuer_store] upsert_account_state({}, email_present={}, key_ref_present={})",
-            issuer_id,
-            contact_email.is_some(),
-            account_key_ref.is_some()
-        );
-        let conn = self.lock_conn()?;
-        let now = Utc::now().to_rfc3339();
-
-        let updated = conn.execute(
-            r#"
-            UPDATE issuer_configs
-            SET contact_email = COALESCE(?2, contact_email),
-                account_key_ref = COALESCE(?3, account_key_ref),
-                updated_at = ?4
-            WHERE issuer_id = ?1
-            "#,
-            params![issuer_id, contact_email, account_key_ref, now],
-        )?;
-
-        if updated == 0 {
-            return Err(anyhow!("issuer not found when updating account: {issuer_id}"));
-        }
-
-        Self::get_with_conn(&conn, issuer_id)?
-            .ok_or_else(|| anyhow!("issuer not found after update: {issuer_id}"))
-    }
-
     pub fn set_account_key_ref(
         &self,
         issuer_id: &str,

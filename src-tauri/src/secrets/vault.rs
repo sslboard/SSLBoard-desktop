@@ -4,12 +4,6 @@ use zeroize::{Zeroize, Zeroizing};
 
 use super::{keyring_store::MasterKeyStore, store::SecretStoreError};
 
-pub trait SecretVault: Send + Sync {
-    fn is_unlocked(&self) -> bool;
-    fn unlock(&self) -> Result<(), SecretStoreError>;
-    fn lock(&self);
-}
-
 /// Caches the master key in memory and provides explicit lock/unlock control.
 #[derive(Clone)]
 pub struct MasterKeyVault {
@@ -67,20 +61,6 @@ impl MasterKeyVault {
             .as_ref()
             .ok_or_else(|| SecretStoreError::Locked("vault is locked".into()))?;
         f(key)
-    }
-}
-
-impl SecretVault for MasterKeyVault {
-    fn is_unlocked(&self) -> bool {
-        MasterKeyVault::is_unlocked(self)
-    }
-
-    fn unlock(&self) -> Result<(), SecretStoreError> {
-        MasterKeyVault::unlock(self)
-    }
-
-    fn lock(&self) {
-        MasterKeyVault::lock(self)
     }
 }
 

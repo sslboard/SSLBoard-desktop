@@ -144,7 +144,6 @@ pub struct CheckPropagationRequest {
 }
 
 pub type PropagationDto = DnsPropagationResult;
-pub type PropagationStateDto = PropagationState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
