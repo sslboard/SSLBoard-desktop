@@ -1,5 +1,5 @@
 mod core;
-mod issuance;
+pub mod issuance;
 mod secrets;
 mod storage;
 

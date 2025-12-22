@@ -1,4 +1,4 @@
-## 1. Dependencies and Types
+# 1. Dependencies and Types
 
 - [x] 1.1 Add DNS provider dependencies (reqwest for Cloudflare/DigitalOcean, aws-sdk-route53 + aws-config for Route 53).
 - [x] 1.2 Add error category enum to core types.

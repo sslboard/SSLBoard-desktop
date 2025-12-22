@@ -1,16 +1,16 @@
 ## 1. Test Framework Setup
-- [ ] 1.1 Add `integration-tests` feature flag to `Cargo.toml`
-- [ ] 1.2 Create `src-tauri/tests/integration/dns_providers/` directory structure
-- [ ] 1.3 Add test utilities module for credential loading, test domain management, and cleanup helpers
-- [ ] 1.4 Configure test environment variable loading (e.g., `DNS_TEST_CLOUDFLARE_TOKEN`, `DNS_TEST_DIGITALOCEAN_TOKEN`, etc.)
+- [x] 1.1 Add `integration-tests` feature flag to `Cargo.toml`
+- [x] 1.2 Create `src-tauri/tests/integration/dns_providers/` directory structure
+- [x] 1.3 Add test utilities module for credential loading, test domain management, and cleanup helpers
+- [x] 1.4 Configure test environment variable loading (e.g., `DNS_TEST_CLOUDFLARE_TOKEN`, `DNS_TEST_DIGITALOCEAN_TOKEN`, etc.)
 
 ## 2. Cloudflare Integration Tests
-- [ ] 2.1 Test record name format (verify FQDN handling)
-- [ ] 2.2 Test TXT value formatting (verify quoting behavior)
-- [ ] 2.3 Test upsert behavior (create new vs update existing)
-- [ ] 2.4 Test verification logic (read-after-write validation)
-- [ ] 2.5 Test nested subdomain handling (`_acme-challenge.www.example.com`)
-- [ ] 2.6 Test error cases (invalid token, rate limiting, zone not found)
+- [x] 2.1 Test record name format (verify FQDN handling)
+- [x] 2.2 Test TXT value formatting (verify quoting behavior)
+- [x] 2.3 Test upsert behavior (create new vs update existing)
+- [x] 2.4 Test verification logic (read-after-write validation)
+- [x] 2.5 Test nested subdomain handling (`_acme-challenge.www.example.com`)
+- [x] 2.6 Test error cases (invalid token, rate limiting, zone not found)
 
 ## 3. DigitalOcean Integration Tests
 - [ ] 3.1 Test record name format (verify relative name conversion)
@@ -41,4 +41,3 @@
 - [ ] 6.2 Verify tests catch known issues (record name format, quoting bugs)
 - [ ] 6.3 Verify tests pass with corrected implementations
 - [ ] 6.4 Document any API behavior discrepancies discovered
-
