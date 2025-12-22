@@ -1,0 +1,143 @@
+use anyhow::Result;
+
+use crate::{secrets::manager::SecretManager, storage::dns::DnsProvider};
+
+mod cloudflare;
+mod digitalocean;
+mod route53;
+
+pub use cloudflare::CloudflareAdapter;
+pub use digitalocean::DigitalOceanAdapter;
+pub use route53::Route53Adapter;
+
+pub trait DnsProviderAdapter: Send + Sync {
+    fn create_txt(&self, record_name: &str, value: &str) -> Result<()>;
+    fn cleanup_txt(&self, record_name: &str) -> Result<()>;
+}
+
+pub struct UnsupportedDnsProviderAdapter {
+    reason: String,
+}
+
+impl UnsupportedDnsProviderAdapter {
+    pub fn new(reason: String) -> Self {
+        Self { reason }
+    }
+}
+
+impl DnsProviderAdapter for UnsupportedDnsProviderAdapter {
+    fn create_txt(&self, _record_name: &str, _value: &str) -> Result<()> {
+        Err(anyhow::anyhow!(self.reason.clone()))
+    }
+
+    fn cleanup_txt(&self, _record_name: &str) -> Result<()> {
+        Err(anyhow::anyhow!(self.reason.clone()))
+    }
+}
+
+pub fn adapter_for_provider(
+    provider: &DnsProvider,
+    secrets: &SecretManager,
+) -> Box<dyn DnsProviderAdapter> {
+    match provider.provider_type.as_str() {
+        "cloudflare" => {
+            if provider.secret_refs.is_empty() {
+                return Box::new(UnsupportedDnsProviderAdapter::new(
+                    "Cloudflare provider missing API token".to_string(),
+                ));
+            }
+            let token_ref = &provider.secret_refs[0];
+            match secrets.resolve_secret(token_ref) {
+                Ok(token_bytes) => {
+                    if let Ok(token) = String::from_utf8(token_bytes) {
+                        let domain_suffix = provider
+                            .domain_suffixes
+                            .first()
+                            .cloned()
+                            .unwrap_or_default();
+                        Box::new(CloudflareAdapter::new(token, domain_suffix))
+                    } else {
+                        Box::new(UnsupportedDnsProviderAdapter::new(
+                            "Failed to decode Cloudflare API token".to_string(),
+                        ))
+                    }
+                }
+                Err(err) => Box::new(UnsupportedDnsProviderAdapter::new(format!(
+                    "Failed to resolve Cloudflare API token: {}",
+                    err
+                ))),
+            }
+        }
+        "digitalocean" => {
+            if provider.secret_refs.is_empty() {
+                return Box::new(UnsupportedDnsProviderAdapter::new(
+                    "DigitalOcean provider missing API token".to_string(),
+                ));
+            }
+            let token_ref = &provider.secret_refs[0];
+            match secrets.resolve_secret(token_ref) {
+                Ok(token_bytes) => {
+                    if let Ok(token) = String::from_utf8(token_bytes) {
+                        let domain = provider
+                            .domain_suffixes
+                            .first()
+                            .cloned()
+                            .unwrap_or_default();
+                        Box::new(DigitalOceanAdapter::new(token, domain))
+                    } else {
+                        Box::new(UnsupportedDnsProviderAdapter::new(
+                            "Failed to decode DigitalOcean API token".to_string(),
+                        ))
+                    }
+                }
+                Err(err) => Box::new(UnsupportedDnsProviderAdapter::new(format!(
+                    "Failed to resolve DigitalOcean API token: {}",
+                    err
+                ))),
+            }
+        }
+        "route53" => {
+            if provider.secret_refs.len() < 2 {
+                return Box::new(UnsupportedDnsProviderAdapter::new(
+                    "Route 53 provider missing access key or secret key".to_string(),
+                ));
+            }
+            let access_key_ref = &provider.secret_refs[0];
+            let secret_key_ref = &provider.secret_refs[1];
+            match (
+                secrets.resolve_secret(access_key_ref),
+                secrets.resolve_secret(secret_key_ref),
+            ) {
+                (Ok(access_key_bytes), Ok(secret_key_bytes)) => {
+                    match (
+                        String::from_utf8(access_key_bytes),
+                        String::from_utf8(secret_key_bytes),
+                    ) {
+                        (Ok(access_key), Ok(secret_key)) => {
+                            let domain_suffix = provider
+                                .domain_suffixes
+                                .first()
+                                .cloned()
+                                .unwrap_or_default();
+                            Box::new(Route53Adapter::new(access_key, secret_key, domain_suffix))
+                        }
+                        _ => Box::new(UnsupportedDnsProviderAdapter::new(
+                            "Failed to decode Route 53 credentials".to_string(),
+                        )),
+                    }
+                }
+                _ => Box::new(UnsupportedDnsProviderAdapter::new(
+                    "Failed to resolve Route 53 credentials".to_string(),
+                )),
+            }
+        }
+        "manual" => Box::new(UnsupportedDnsProviderAdapter::new(
+            "manual DNS providers do not support automated test connections".to_string(),
+        )),
+        _ => Box::new(UnsupportedDnsProviderAdapter::new(format!(
+            "provider type '{}' does not have an adapter yet",
+            provider.provider_type
+        ))),
+    }
+}
+

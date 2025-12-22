@@ -1,22 +1,38 @@
-## 1. Rust Core - Adapters
+## 1. Dependencies and Types
 
-- [ ] 1.1 Implement Cloudflare adapter (create/delete TXT, optional zone id lookup).
-- [ ] 1.2 Implement DigitalOcean adapter (create/delete TXT).
-- [ ] 1.3 Implement Route 53 adapter (create/delete TXT with hosted zone id).
-- [ ] 1.4 Normalize adapter errors into a consistent error enum for UI.
-- [ ] 1.5 Add unit tests for record name/zone mapping and provider request shaping.
+- [ ] 1.1 Add Rust SDK dependencies (aws-sdk-route53, aws-config, cloudflare, digitalocean).
+- [ ] 1.2 Add error category enum to core types.
+- [ ] 1.3 Update SecretKind to support Route 53 access key and secret separately.
+- [ ] 1.4 Update DnsProviderTestResult to include error_category field.
 
-## 2. DTOs and Storage
+## 2. Rust Core - Adapters
 
-- [ ] 2.1 Add provider-specific config fields to DTOs (Cloudflare zone id, Route 53 hosted zone id).
-- [ ] 2.2 Validate config presence per provider type on create/update.
+- [ ] 2.1 Implement Cloudflare adapter with automatic zone discovery (list zones, match suffix).
+- [ ] 2.2 Implement DigitalOcean adapter (create/delete TXT).
+- [ ] 2.3 Implement Route 53 adapter with automatic hosted zone discovery (list zones, match suffix).
+- [ ] 2.4 Map adapter errors to structured error category enum.
+- [ ] 2.5 Add unit tests for zone discovery, record name mapping, and error categorization.
 
-## 3. Test Connection Flow
+## 3. Token Validation
 
-- [ ] 3.1 Wire new adapters into `dns_provider_test` with create/propagate/cleanup.
-- [ ] 3.2 Surface provider error categories to the UI.
+- [ ] 3.1 Add token validation command for Cloudflare (verify can list zones).
+- [ ] 3.2 Add token validation command for Route 53 (verify can list hosted zones).
+- [ ] 3.3 Add token validation command for DigitalOcean (verify can list domains).
 
-## 4. UI Updates
+## 4. Secret Management
 
-- [ ] 4.1 Add provider-specific input fields in DNS Providers form.
-- [ ] 4.2 Show error category and suggestion text on failed tests.
+- [ ] 4.1 Update DNS provider create/update to support multiple secrets (Route 53).
+- [ ] 4.2 Update DNS provider delete to cleanup all associated secrets.
+- [ ] 4.3 Update storage to track multiple secret refs per provider.
+
+## 5. Test Connection Flow
+
+- [ ] 5.1 Wire new adapters into `dns_provider_test` with create/propagate/cleanup.
+- [ ] 5.2 Return structured error categories in test results.
+
+## 6. UI Updates
+
+- [ ] 6.1 Remove zone ID input fields from DNS Providers form.
+- [ ] 6.2 Add "Test Token" button for Cloudflare/Route 53/DigitalOcean providers.
+- [ ] 6.3 Show error category and suggestion text on failed tests.
+- [ ] 6.4 Update Route 53 form to collect access key and secret separately.

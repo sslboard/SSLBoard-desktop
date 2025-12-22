@@ -4,7 +4,7 @@ use crate::{
     core::types::{
         CertificateRecord, CheckPropagationRequest, CompleteIssuanceRequest, CreateIssuerRequest,
         CreateSecretRequest, CreateDnsProviderRequest, DeleteDnsProviderRequest, DeleteIssuerRequest,
-        DnsProviderDto, DnsProviderResolutionDto, DnsProviderTestResult, DnsProviderType,
+        DnsProviderDto, DnsProviderErrorCategory, DnsProviderResolutionDto, DnsProviderTestResult, DnsProviderType,
         IssuerConfigDto, IssuerEnvironment, IssuerType, PrepareDnsChallengeRequest,
         PreparedDnsChallenge, PropagationDto, ResolveDnsProviderRequest, SecretRefRecord,
         SelectIssuerRequest, SetIssuerDisabledRequest, StartIssuanceRequest,
@@ -400,26 +400,53 @@ pub async fn dns_provider_create(
         }
         let provider_type = provider_type_to_string(&req.provider_type);
         let needs_token = !matches!(req.provider_type, DnsProviderType::Manual);
-        let secret_ref = if needs_token {
-            let token = req
-                .api_token
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| anyhow::anyhow!("API token is required for this provider"))?;
-            let label = format!("DNS provider token: {}", req.label.trim());
-            let record = secrets
-                .create_secret(SecretKind::DnsProviderToken, label, token)
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-            Some(record.id)
-        } else {
-            None
-        };
+        let mut secret_refs = Vec::new();
+        
+        if needs_token {
+            match req.provider_type {
+                DnsProviderType::Route53 => {
+                    let access_key = req.route53_access_key
+                        .clone()
+                        .filter(|v| !v.trim().is_empty())
+                        .ok_or_else(|| anyhow::anyhow!("Route 53 access key is required"))?;
+                    let secret_key = req.route53_secret_key
+                        .clone()
+                        .filter(|v| !v.trim().is_empty())
+                        .ok_or_else(|| anyhow::anyhow!("Route 53 secret key is required"))?;
+                    
+                    let access_key_label = format!("Route 53 access key: {}", req.label.trim());
+                    let secret_key_label = format!("Route 53 secret key: {}", req.label.trim());
+                    
+                    let access_key_record = secrets
+                        .create_secret(SecretKind::DnsProviderToken, access_key_label, access_key)
+                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    let secret_key_record = secrets
+                        .create_secret(SecretKind::DnsProviderToken, secret_key_label, secret_key)
+                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    
+                    secret_refs.push(access_key_record.id);
+                    secret_refs.push(secret_key_record.id);
+                }
+                _ => {
+                    let token = req
+                        .api_token
+                        .clone()
+                        .filter(|value| !value.trim().is_empty())
+                        .ok_or_else(|| anyhow::anyhow!("API token is required for this provider"))?;
+                    let label = format!("DNS provider token: {}", req.label.trim());
+                    let record = secrets
+                        .create_secret(SecretKind::DnsProviderToken, label, token)
+                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    secret_refs.push(record.id);
+                }
+            }
+        }
 
         let record = store.create_provider(
             provider_type,
             req.label.trim().to_string(),
             domain_suffixes,
-            secret_ref,
+            secret_refs,
             req.config.clone(),
         )?;
         Ok(provider_record_to_dto(record))
@@ -451,27 +478,55 @@ pub async fn dns_provider_update(
             .get_provider(&req.provider_id)?
             .ok_or_else(|| anyhow::anyhow!("provider not found: {}", req.provider_id))?;
 
-        if let Some(token) = req
+        let mut secret_refs = existing.secret_refs.clone();
+        let provider_type = provider_type_from_string(&existing.provider_type);
+        
+        // Handle Route 53 credentials
+        if matches!(provider_type, DnsProviderType::Route53) {
+            if let (Some(access_key), Some(secret_key)) = (
+                req.route53_access_key.clone().filter(|v| !v.trim().is_empty()),
+                req.route53_secret_key.clone().filter(|v| !v.trim().is_empty()),
+            ) {
+                // Delete old secrets if they exist
+                for secret_ref in &secret_refs {
+                    let _ = secrets.delete_secret(secret_ref);
+                }
+                secret_refs.clear();
+                
+                // Create new secrets
+                let access_key_label = format!("Route 53 access key: {}", req.label.trim());
+                let secret_key_label = format!("Route 53 secret key: {}", req.label.trim());
+                
+                let access_key_record = secrets
+                    .create_secret(SecretKind::DnsProviderToken, access_key_label, access_key)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let secret_key_record = secrets
+                    .create_secret(SecretKind::DnsProviderToken, secret_key_label, secret_key)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                
+                secret_refs.push(access_key_record.id);
+                secret_refs.push(secret_key_record.id);
+            }
+        } else if let Some(token) = req
             .api_token
             .clone()
             .filter(|value| !value.trim().is_empty())
         {
             let secret_label = format!("DNS provider token: {}", req.label.trim());
-            match existing.secret_ref.clone() {
-                Some(secret_ref) => {
-                    secrets
-                        .update_secret(&secret_ref, token, Some(secret_label.clone()))
-                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-                    secret_ref
-                }
-                None => {
-                    let record = secrets
-                        .create_secret(SecretKind::DnsProviderToken, secret_label.clone(), token)
-                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-                    store.update_provider_secret_ref(&req.provider_id, Some(record.id.clone()))?;
-                    record.id
-                }
-            };
+            if let Some(secret_ref) = secret_refs.first() {
+                secrets
+                    .update_secret(secret_ref, token, Some(secret_label.clone()))
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            } else {
+                let record = secrets
+                    .create_secret(SecretKind::DnsProviderToken, secret_label.clone(), token)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                secret_refs.push(record.id);
+            }
+        }
+        
+        if !secret_refs.is_empty() {
+            store.update_provider_secret_refs(&req.provider_id, secret_refs)?;
         }
 
         let record = store.update_provider(
@@ -498,10 +553,11 @@ pub async fn dns_provider_delete(
     let secrets = secrets.inner().clone();
     spawn_blocking(move || -> Result<String, anyhow::Error> {
         let record = store.delete_provider(&req.provider_id)?;
-        if let Some(secret_ref) = record.secret_ref {
-            secrets
-                .delete_secret(&secret_ref)
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        // Cleanup all secrets associated with this provider
+        for secret_ref in &record.secret_refs {
+            if let Err(err) = secrets.delete_secret(secret_ref) {
+                eprintln!("Warning: failed to delete secret {}: {}", secret_ref, err);
+            }
         }
         Ok(req.provider_id)
     })
@@ -538,12 +594,14 @@ pub async fn dns_provider_test(
 
         let create_start = Instant::now();
         if let Err(err) = adapter.create_txt(&record_name, &value) {
+            let error_category = categorize_dns_error(&err);
             return Ok(DnsProviderTestResult {
                 success: false,
                 record_name: Some(record_name),
                 value: Some(value),
                 propagation: None,
                 error: Some(err.to_string()),
+                error_category: Some(error_category),
                 error_stage: Some("create".to_string()),
                 elapsed_ms: started.elapsed().as_millis() as u64,
                 create_ms: Some(create_start.elapsed().as_millis() as u64),
@@ -562,12 +620,14 @@ pub async fn dns_provider_test(
                 let cleanup_result = adapter.cleanup_txt(&record_name);
                 let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
                 if let Err(cleanup_err) = cleanup_result {
+                    let error_category = categorize_dns_error(&cleanup_err);
                     return Ok(DnsProviderTestResult {
                         success: false,
                         record_name: Some(record_name),
                         value: Some(value),
                         propagation: None,
                         error: Some(cleanup_err.to_string()),
+                        error_category: Some(error_category),
                         error_stage: Some("cleanup".to_string()),
                         elapsed_ms: started.elapsed().as_millis() as u64,
                         create_ms: Some(create_ms),
@@ -575,12 +635,14 @@ pub async fn dns_provider_test(
                         cleanup_ms: Some(cleanup_ms),
                     });
                 }
+                let error_category = categorize_dns_error(&err);
                 return Ok(DnsProviderTestResult {
                     success: false,
                     record_name: Some(record_name),
                     value: Some(value),
                     propagation: None,
                     error: Some(err.to_string()),
+                    error_category: Some(error_category),
                     error_stage: Some("propagation".to_string()),
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     create_ms: Some(create_ms),
@@ -595,12 +657,14 @@ pub async fn dns_provider_test(
         let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
 
         if let Err(err) = cleanup_result {
+            let error_category = categorize_dns_error(&err);
             return Ok(DnsProviderTestResult {
                 success: false,
                 record_name: Some(record_name),
                 value: Some(value),
                 propagation: Some(propagation),
                 error: Some(err.to_string()),
+                error_category: Some(error_category),
                 error_stage: Some("cleanup".to_string()),
                 elapsed_ms: started.elapsed().as_millis() as u64,
                 create_ms: Some(create_ms),
@@ -620,6 +684,7 @@ pub async fn dns_provider_test(
             value: Some(value),
             propagation: Some(propagation),
             error: None,
+            error_category: None,
             error_stage: None,
             elapsed_ms: started.elapsed().as_millis() as u64,
             create_ms: Some(create_ms),
@@ -855,4 +920,19 @@ fn validate_acme_requirements(
         }
     }
     Ok(())
+}
+
+fn categorize_dns_error(err: &anyhow::Error) -> DnsProviderErrorCategory {
+    let err_str = err.to_string().to_lowercase();
+    if err_str.contains("auth") || err_str.contains("unauthorized") || err_str.contains("forbidden") || err_str.contains("invalid credentials") || err_str.contains("access denied") {
+        DnsProviderErrorCategory::AuthError
+    } else if err_str.contains("not found") || err_str.contains("404") || err_str.contains("no such") {
+        DnsProviderErrorCategory::NotFound
+    } else if err_str.contains("rate limit") || err_str.contains("429") || err_str.contains("too many requests") {
+        DnsProviderErrorCategory::RateLimited
+    } else if err_str.contains("network") || err_str.contains("timeout") || err_str.contains("connection") || err_str.contains("dns") {
+        DnsProviderErrorCategory::NetworkError
+    } else {
+        DnsProviderErrorCategory::Unknown
+    }
 }

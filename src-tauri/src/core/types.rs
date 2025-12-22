@@ -172,6 +172,10 @@ pub struct CreateDnsProviderRequest {
     pub label: String,
     pub domain_suffixes: String,
     pub api_token: Option<String>,
+    #[serde(rename = "route53_access_key")]
+    pub route53_access_key: Option<String>,
+    #[serde(rename = "route53_secret_key")]
+    pub route53_secret_key: Option<String>,
     pub config: Option<Value>,
 }
 
@@ -181,6 +185,10 @@ pub struct UpdateDnsProviderRequest {
     pub label: String,
     pub domain_suffixes: String,
     pub api_token: Option<String>,
+    #[serde(rename = "route53_access_key")]
+    pub route53_access_key: Option<String>,
+    #[serde(rename = "route53_secret_key")]
+    pub route53_secret_key: Option<String>,
     pub config: Option<Value>,
 }
 
@@ -206,6 +214,16 @@ pub struct TestDnsProviderRequest {
     pub provider_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DnsProviderErrorCategory {
+    AuthError,
+    NotFound,
+    RateLimited,
+    NetworkError,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DnsProviderTestResult {
     pub success: bool,
@@ -213,6 +231,7 @@ pub struct DnsProviderTestResult {
     pub value: Option<String>,
     pub propagation: Option<DnsPropagationResult>,
     pub error: Option<String>,
+    pub error_category: Option<DnsProviderErrorCategory>,
     pub error_stage: Option<String>,
     pub elapsed_ms: u64,
     pub create_ms: Option<u64>,

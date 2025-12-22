@@ -17,7 +17,7 @@ pub struct DnsProvider {
     pub provider_type: String,
     pub label: String,
     pub domain_suffixes: Vec<String>,
-    pub secret_ref: Option<String>,
+    pub secret_refs: Vec<String>, // Changed from Option<String> to Vec<String> to support multiple secrets
     pub config_json: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -90,7 +90,7 @@ impl DnsConfigStore {
         provider_type: String,
         label: String,
         domain_suffixes: Vec<String>,
-        secret_ref: Option<String>,
+        secret_refs: Vec<String>,
         config: Option<Value>,
     ) -> Result<DnsProvider> {
         let conn = self.lock_conn()?;
@@ -98,10 +98,15 @@ impl DnsConfigStore {
         let provider_id = format!("dns_prov_{}", Uuid::new_v4().as_simple());
         let domain_suffixes_json =
             serde_json::to_string(&domain_suffixes).context("failed to serialize suffixes")?;
+        let secret_refs_json = if secret_refs.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&secret_refs).context("failed to serialize secret refs")?)
+        };
         let config_json = match config {
-            Some(value) => Some(
-                serde_json::to_string(&value).context("failed to serialize provider config")?,
-            ),
+            Some(value) => {
+                Some(serde_json::to_string(&value).context("failed to serialize provider config")?)
+            }
             None => None,
         };
 
@@ -116,7 +121,7 @@ impl DnsConfigStore {
                 provider_type,
                 label,
                 domain_suffixes_json,
-                secret_ref,
+                secret_refs_json,
                 config_json,
                 now
             ],
@@ -138,9 +143,9 @@ impl DnsConfigStore {
         let domain_suffixes_json =
             serde_json::to_string(&domain_suffixes).context("failed to serialize suffixes")?;
         let config_json = match config {
-            Some(value) => Some(
-                serde_json::to_string(&value).context("failed to serialize provider config")?,
-            ),
+            Some(value) => {
+                Some(serde_json::to_string(&value).context("failed to serialize provider config")?)
+            }
             None => None,
         };
 
@@ -164,13 +169,18 @@ impl DnsConfigStore {
             .ok_or_else(|| anyhow!("provider not found after update: {provider_id}"))
     }
 
-    pub fn update_provider_secret_ref(
+    pub fn update_provider_secret_refs(
         &self,
         provider_id: &str,
-        secret_ref: Option<String>,
+        secret_refs: Vec<String>,
     ) -> Result<DnsProvider> {
         let conn = self.lock_conn()?;
         let now = Utc::now().to_rfc3339();
+        let secret_refs_json = if secret_refs.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&secret_refs).context("failed to serialize secret refs")?)
+        };
         let updated = conn.execute(
             r#"
             UPDATE dns_providers
@@ -178,10 +188,12 @@ impl DnsConfigStore {
                 updated_at = ?3
             WHERE id = ?1
             "#,
-            params![provider_id, secret_ref, now],
+            params![provider_id, secret_refs_json, now],
         )?;
         if updated == 0 {
-            return Err(anyhow!("provider not found when updating secret: {provider_id}"));
+            return Err(anyhow!(
+                "provider not found when updating secret: {provider_id}"
+            ));
         }
         Self::get_provider_with_conn(&conn, provider_id)?
             .ok_or_else(|| anyhow!("provider not found after secret update: {provider_id}"))
@@ -191,7 +203,10 @@ impl DnsConfigStore {
         let conn = self.lock_conn()?;
         let existing = Self::get_provider_with_conn(&conn, provider_id)?
             .ok_or_else(|| anyhow!("provider not found when deleting: {provider_id}"))?;
-        conn.execute("DELETE FROM dns_providers WHERE id = ?1", params![provider_id])?;
+        conn.execute(
+            "DELETE FROM dns_providers WHERE id = ?1",
+            params![provider_id],
+        )?;
         Ok(existing)
     }
 
@@ -347,6 +362,12 @@ impl DnsConfigStore {
 
             let suffixes_json =
                 serde_json::to_string(&suffixes).context("failed to serialize suffixes")?;
+            let secret_refs_json = legacy
+                .secret_ref
+                .map(|ref_id| {
+                    serde_json::to_string(&vec![ref_id]).context("failed to serialize secret refs")
+                })
+                .transpose()?;
             conn.execute(
                 r#"
                 INSERT INTO dns_providers (
@@ -358,7 +379,7 @@ impl DnsConfigStore {
                     legacy.adapter_id,
                     label,
                     suffixes_json,
-                    legacy.secret_ref,
+                    secret_refs_json,
                     config_json,
                     legacy.created_at.to_rfc3339(),
                     legacy.updated_at.to_rfc3339()
@@ -381,11 +402,9 @@ impl DnsConfigStore {
     }
 
     fn table_count(conn: &Connection, table: &str) -> Result<i64> {
-        let count = conn.query_row(
-            &format!("SELECT COUNT(1) FROM {table}"),
-            [],
-            |row| row.get(0),
-        )?;
+        let count = conn.query_row(&format!("SELECT COUNT(1) FROM {table}"), [], |row| {
+            row.get(0)
+        })?;
         Ok(count)
     }
 
@@ -396,12 +415,26 @@ impl DnsConfigStore {
         let domain_suffixes: Vec<String> =
             serde_json::from_str(&domain_suffixes_raw).unwrap_or_default();
 
+        // Deserialize secret_refs from JSON array, with backward compatibility for old single secret_ref values
+        let secret_refs: Vec<String> = match row.get::<_, Option<String>>(4)? {
+            Some(ref raw) => {
+                // Try to parse as JSON array first
+                if let Ok(refs) = serde_json::from_str::<Vec<String>>(raw) {
+                    refs
+                } else {
+                    // Backward compatibility: if it's not JSON, treat as single secret_ref
+                    vec![raw.clone()]
+                }
+            }
+            None => Vec::new(),
+        };
+
         Ok(DnsProvider {
             id: row.get(0)?,
             provider_type: row.get(1)?,
             label: row.get(2)?,
             domain_suffixes,
-            secret_ref: row.get(4)?,
+            secret_refs,
             config_json: row.get(5)?,
             created_at: chrono::DateTime::parse_from_rfc3339(&created_at_raw)
                 .map(|dt| dt.with_timezone(&Utc))
@@ -412,10 +445,7 @@ impl DnsConfigStore {
         })
     }
 
-    fn get_provider_with_conn(
-        conn: &Connection,
-        provider_id: &str,
-    ) -> Result<Option<DnsProvider>> {
+    fn get_provider_with_conn(conn: &Connection, provider_id: &str) -> Result<Option<DnsProvider>> {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, provider_type, label, domain_suffixes, secret_ref, config_json, created_at, updated_at

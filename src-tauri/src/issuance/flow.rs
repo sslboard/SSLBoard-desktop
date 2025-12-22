@@ -18,6 +18,7 @@ use x509_parser::pem::parse_x509_pem;
 use crate::{
     core::types::{CertificateRecord, CertificateSource},
     issuance::dns::{DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter},
+    issuance::dns_providers::adapter_for_provider,
     secrets::{manager::SecretManager, types::SecretKind},
     storage::{
         dns::{DnsConfigStore, DnsProvider},
@@ -166,7 +167,14 @@ pub fn start_managed_dns01(
             value: proof.clone(),
             zone: zone_override,
         };
-        let record = adapter.present_txt(&request)?;
+        let mut record = adapter.present_txt(&request)?;
+        if let Some(provider) = resolution.provider.as_ref() {
+            if resolution.ambiguous.len() <= 1 {
+                let provider_adapter = adapter_for_provider(provider, secrets);
+                provider_adapter.create_txt(&record.record_name, &record.value)?;
+                record.adapter = provider.provider_type.clone();
+            }
+        }
         dns_records.push(record);
     }
 

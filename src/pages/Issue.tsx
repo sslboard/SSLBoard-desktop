@@ -114,6 +114,16 @@ export function IssuePage() {
     Object.values(statusMap).length === startResult.dns_records.length &&
     Object.values(statusMap).every((s) => s?.state === "found");
 
+  const manualRecords = startResult?.dns_records.filter((rec) => rec.adapter === "manual") ?? [];
+  const managedRecords = startResult?.dns_records.filter((rec) => rec.adapter !== "manual") ?? [];
+  const hasManual = manualRecords.length > 0;
+  const hasManaged = managedRecords.length > 0;
+  const dnsModeLabel = hasManual && hasManaged
+    ? "mixed"
+    : hasManual
+      ? "manual"
+      : startResult?.dns_records[0]?.adapter ?? "manual";
+
   async function finalizeIssuance() {
     if (!startResult) return;
     setFinalizing(true);
@@ -298,18 +308,36 @@ export function IssuePage() {
               <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 DNS instructions
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                  {startResult.dns_records[0]?.adapter ?? "manual"}
+                  {dnsModeLabel}
                 </span>
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                {startResult.dns_records.map((rec) => (
-                  <InstructionCard key={rec.record_name} record={rec} status={statusMap[rec.record_name]} />
-                ))}
-              </div>
+              {hasManaged && !hasManual && (
+                <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                  Automatic DNS provider is configured. TXT records are being created for you.
+                </div>
+              )}
+              {hasManaged && hasManual && (
+                <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                  Some DNS records are handled automatically. Remaining records require manual setup.
+                </div>
+              )}
+              {hasManual && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {manualRecords.map((rec) => (
+                    <InstructionCard
+                      key={rec.record_name}
+                      record={rec}
+                      status={statusMap[rec.record_name]}
+                    />
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap gap-3">
                 <Button variant="secondary" onClick={() => void checkAll()} disabled={checking}>
                   {checking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  I&apos;ve added the TXT records — check propagation
+                  {hasManual
+                    ? "I&apos;ve added the TXT records — check propagation"
+                    : "Check DNS propagation"}
                 </Button>
                 <Button onClick={() => void finalizeIssuance()} disabled={!allFound || finalizing}>
                   {finalizing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

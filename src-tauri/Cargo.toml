@@ -55,8 +55,15 @@ rusqlite = { version = "0.32", features = ["bundled"] }  # SQLite for certificat
 tokio = { version = "1", features = ["full"] }
 
 # HTTP client for DNS provider APIs
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 ureq = "2.10"
+
+# AWS SDK for Route 53
+aws-sdk-route53 = "1"
+aws-config = "1"
+
+# Cloudflare API (using reqwest directly, no official SDK)
+# DigitalOcean API (using reqwest directly, no official SDK)
 
 # Error handling
 thiserror = "1.0"
