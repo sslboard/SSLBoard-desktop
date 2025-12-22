@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use super::DnsProviderAdapter;
 
@@ -25,6 +26,18 @@ struct DigitalOceanDnsRecordResponse {
 #[derive(Deserialize)]
 struct DigitalOceanDnsRecordResult {
     id: u64,
+}
+
+#[derive(Deserialize)]
+struct DigitalOceanDnsRecordDetail {
+    id: u64,
+    #[serde(default)]
+    data: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DigitalOceanDnsRecordDetailResponse {
+    domain_record: DigitalOceanDnsRecordDetail,
 }
 
 impl DigitalOceanAdapter {
@@ -71,6 +84,34 @@ impl DigitalOceanAdapter {
             .get(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records?type=TXT&name={}",
                 self.domain, relative_name
+            ))
+            .header("Authorization", format!("Bearer {}", self.api_token))
+            .send()
+            .context("Failed to list DigitalOcean DNS records")?;
+
+        if !response.status().is_success() {
+            if response.status() == 401 || response.status() == 403 {
+                return Err(anyhow!("DigitalOcean authentication failed"));
+            }
+            if response.status() == 429 {
+                return Err(anyhow!("DigitalOcean rate limit exceeded"));
+            }
+            return Err(anyhow!("DigitalOcean API error: {}", response.status()));
+        }
+
+        let list_result: DigitalOceanDnsRecordListResponse = response
+            .json()
+            .context("Failed to parse DigitalOcean DNS record list")?;
+
+        Ok(list_result.domain_records)
+    }
+
+    fn list_all_txt_records(&self) -> Result<Vec<DigitalOceanDnsRecordListItem>> {
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(&format!(
+                "https://api.digitalocean.com/v2/domains/{}/records?type=TXT",
+                self.domain
             ))
             .header("Authorization", format!("Bearer {}", self.api_token))
             .send()
@@ -167,25 +208,65 @@ impl DigitalOceanAdapter {
         Ok(())
     }
 
+    fn fetch_record_data(&self, record_id: u64) -> Result<Option<String>> {
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(&format!(
+                "https://api.digitalocean.com/v2/domains/{}/records/{}",
+                self.domain, record_id
+            ))
+            .header("Authorization", format!("Bearer {}", self.api_token))
+            .send()
+            .context("Failed to fetch DigitalOcean DNS record")?;
+
+        if response.status() == 404 {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            if response.status() == 401 || response.status() == 403 {
+                return Err(anyhow!("DigitalOcean authentication failed"));
+            }
+            if response.status() == 429 {
+                return Err(anyhow!("DigitalOcean rate limit exceeded"));
+            }
+            let error_text = response.text().unwrap_or_default();
+            return Err(anyhow!("DigitalOcean API error: {}", error_text));
+        }
+
+        let record: DigitalOceanDnsRecordDetailResponse = response
+            .json()
+            .context("Failed to parse DigitalOcean DNS record response")?;
+        Ok(record.domain_record.data)
+    }
+
     fn upsert_txt_record(&self, record_name: &str, value: &str) -> Result<()> {
         let existing = self.list_txt_records(record_name)?;
+        let mut record_ids = Vec::new();
         if existing.is_empty() {
-            self.create_txt_record(record_name, value)?;
+            let record_id = self.create_txt_record(record_name, value)?;
+            record_ids.push(record_id);
         } else {
             for record in &existing {
                 self.update_txt_record(record.id, record_name, value)?;
+                record_ids.push(record.id);
             }
         }
-
-        let updated = self.list_txt_records(record_name)?;
         let expected_normalized = Self::normalize_txt_content(value);
-        let matched = updated.iter().any(|record| {
-            record
-                .data
-                .as_deref()
-                .map(|d| Self::normalize_txt_content(d) == expected_normalized)
-                .unwrap_or(false)
-        });
+        let mut matched = false;
+        for _ in 0..5 {
+            for record_id in &record_ids {
+                if let Some(data) = self.fetch_record_data(*record_id)? {
+                    if Self::normalize_txt_content(&data) == expected_normalized {
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if matched {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
         if !matched {
             return Err(anyhow!(
                 "DigitalOcean record verification failed for {}",
@@ -198,10 +279,29 @@ impl DigitalOceanAdapter {
     fn delete_txt_record(&self, record_name: &str) -> Result<()> {
         let client = reqwest::blocking::Client::new();
 
-        let list_result = self.list_txt_records(record_name)?;
-        let record_ids: Vec<u64> = list_result.iter().map(|record| record.id).collect();
+        let relative_name = self.to_relative_name(record_name);
+        let mut record_ids: Vec<u64> = Vec::new();
+        for attempt in 0..4 {
+            let list_result = self.list_txt_records(record_name)?;
+            record_ids = list_result.iter().map(|record| record.id).collect();
+            if !record_ids.is_empty() {
+                break;
+            }
+            if attempt == 2 {
+                let list_result = self.list_all_txt_records()?;
+                record_ids = list_result
+                    .iter()
+                    .filter(|record| record.name == relative_name)
+                    .map(|record| record.id)
+                    .collect();
+                if !record_ids.is_empty() {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(400));
+        }
         if record_ids.is_empty() {
-            return Err(anyhow!("TXT record not found: {}", record_name));
+            return Ok(());
         }
 
         for record_id in record_ids {
@@ -209,12 +309,15 @@ impl DigitalOceanAdapter {
                 .delete(&format!(
                     "https://api.digitalocean.com/v2/domains/{}/records/{}",
                     self.domain, record_id
-                ))
-                .header("Authorization", format!("Bearer {}", self.api_token))
-                .send()
-                .context("Failed to delete DigitalOcean DNS record")?;
+            ))
+            .header("Authorization", format!("Bearer {}", self.api_token))
+            .send()
+            .context("Failed to delete DigitalOcean DNS record")?;
 
             if !delete_response.status().is_success() {
+                if delete_response.status() == 404 {
+                    continue;
+                }
                 return Err(anyhow!(
                     "Failed to delete DigitalOcean DNS record: {}",
                     delete_response.status()

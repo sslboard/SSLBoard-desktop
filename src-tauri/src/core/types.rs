@@ -142,6 +142,7 @@ pub type PropagationDto = DnsPropagationResult;
 #[serde(rename_all = "snake_case")]
 pub enum DnsProviderType {
     Cloudflare,
+    #[serde(rename = "digitalocean", alias = "digital_ocean")]
     DigitalOcean,
     Route53,
     Manual,
