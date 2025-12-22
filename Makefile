@@ -1,9 +1,9 @@
-.PHONY: integration-tests-cloudflare tauri-dev build
+.PHONY: tests check dev build
 
 -include .env.local
 export
 
-test:
+tests:
 	cargo test --manifest-path src-tauri/Cargo.toml --features integration-tests --test integration
 
 check:

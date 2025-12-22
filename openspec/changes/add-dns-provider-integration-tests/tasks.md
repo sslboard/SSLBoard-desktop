@@ -13,13 +13,13 @@
 - [x] 2.6 Test error cases (invalid token, rate limiting, zone not found)
 
 ## 3. DigitalOcean Integration Tests
-- [ ] 3.1 Test record name format (verify relative name conversion)
-- [ ] 3.2 Test TXT value formatting (verify quoting behavior)
-- [ ] 3.3 Test upsert behavior (create new vs update existing)
-- [ ] 3.4 Test verification logic (read-after-write validation)
-- [ ] 3.5 Test nested subdomain handling (`_acme-challenge.www.example.com`)
-- [ ] 3.6 Test query parameter format (verify relative name in URL)
-- [ ] 3.7 Test error cases (invalid token, rate limiting, domain not found)
+- [x] 3.1 Test record name format (verify relative name conversion)
+- [x] 3.2 Test TXT value formatting (verify quoting behavior)
+- [x] 3.3 Test upsert behavior (create new vs update existing)
+- [x] 3.4 Test verification logic (read-after-write validation)
+- [x] 3.5 Test nested subdomain handling (`_acme-challenge.www.example.com`)
+- [x] 3.6 Test query parameter format (verify relative name in URL)
+- [x] 3.7 Test error cases (invalid token, rate limiting, domain not found)
 
 ## 4. Route 53 Integration Tests
 - [ ] 4.1 Test record name format (verify FQDN handling and trailing dot normalization)
