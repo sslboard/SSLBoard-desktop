@@ -32,21 +32,45 @@ impl DigitalOceanAdapter {
         Self { api_token, domain }
     }
 
-    fn format_txt_content(value: &str) -> String {
-        let trimmed = value.trim();
-        if trimmed.starts_with('"') && trimmed.ends_with('"') {
-            trimmed.to_string()
+    /// Converts a full record name (FQDN) to a relative name for DigitalOcean API.
+    /// Example: "_acme-challenge.example.com" with domain "example.com" -> "_acme-challenge"
+    fn to_relative_name(&self, record_name: &str) -> String {
+        let record_name = record_name.trim_end_matches('.');
+        let domain = self.domain.trim_end_matches('.');
+
+        if record_name == domain {
+            // Root domain record
+            "@".to_string()
+        } else if record_name.ends_with(&format!(".{}", domain)) {
+            // Subdomain record - extract the relative part
+            let relative = record_name
+                .strip_suffix(&format!(".{}", domain))
+                .unwrap_or(record_name);
+            relative.to_string()
         } else {
-            format!("\"{}\"", trimmed.trim_matches('"'))
+            // If it doesn't match the domain, return as-is (might be a bug upstream)
+            record_name.to_string()
         }
     }
 
+    /// Formats TXT content. DigitalOcean API handles quoting automatically,
+    /// so we just trim whitespace and remove any existing quotes.
+    fn format_txt_content(value: &str) -> String {
+        value.trim().trim_matches('"').trim().to_string()
+    }
+
+    /// Normalizes TXT content for comparison (removes quotes and whitespace).
+    fn normalize_txt_content(value: &str) -> String {
+        value.trim().trim_matches('"').trim().to_string()
+    }
+
     fn list_txt_records(&self, record_name: &str) -> Result<Vec<DigitalOceanDnsRecordListItem>> {
+        let relative_name = self.to_relative_name(record_name);
         let client = reqwest::blocking::Client::new();
         let response = client
             .get(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records?type=TXT&name={}",
-                self.domain, record_name
+                self.domain, relative_name
             ))
             .header("Authorization", format!("Bearer {}", self.api_token))
             .send()
@@ -59,10 +83,7 @@ impl DigitalOceanAdapter {
             if response.status() == 429 {
                 return Err(anyhow!("DigitalOcean rate limit exceeded"));
             }
-            return Err(anyhow!(
-                "DigitalOcean API error: {}",
-                response.status()
-            ));
+            return Err(anyhow!("DigitalOcean API error: {}", response.status()));
         }
 
         let list_result: DigitalOceanDnsRecordListResponse = response
@@ -74,10 +95,11 @@ impl DigitalOceanAdapter {
 
     fn create_txt_record(&self, record_name: &str, value: &str) -> Result<u64> {
         let client = reqwest::blocking::Client::new();
+        let relative_name = self.to_relative_name(record_name);
 
         let record = DigitalOceanDnsRecord {
             record_type: "TXT".to_string(),
-            name: record_name.to_string(),
+            name: relative_name,
             data: Self::format_txt_content(value),
             ttl: 300,
         };
@@ -113,9 +135,10 @@ impl DigitalOceanAdapter {
 
     fn update_txt_record(&self, record_id: u64, record_name: &str, value: &str) -> Result<()> {
         let client = reqwest::blocking::Client::new();
+        let relative_name = self.to_relative_name(record_name);
         let record = DigitalOceanDnsRecord {
             record_type: "TXT".to_string(),
-            name: record_name.to_string(),
+            name: relative_name,
             data: Self::format_txt_content(value),
             ttl: 300,
         };
@@ -155,10 +178,14 @@ impl DigitalOceanAdapter {
         }
 
         let updated = self.list_txt_records(record_name)?;
-        let expected = Self::format_txt_content(value);
-        let matched = updated
-            .iter()
-            .any(|record| record.data.as_deref() == Some(expected.as_str()));
+        let expected_normalized = Self::normalize_txt_content(value);
+        let matched = updated.iter().any(|record| {
+            record
+                .data
+                .as_deref()
+                .map(|d| Self::normalize_txt_content(d) == expected_normalized)
+                .unwrap_or(false)
+        });
         if !matched {
             return Err(anyhow!(
                 "DigitalOcean record verification failed for {}",
