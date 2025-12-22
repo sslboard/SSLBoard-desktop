@@ -302,6 +302,8 @@ impl SecretMetadataStore {
 
         let kind = match kind_raw.as_str() {
             "dns_credential" | "dns_provider_token" => super::types::SecretKind::DnsProviderToken,
+            "dns_provider_access_key" => super::types::SecretKind::DnsProviderAccessKey,
+            "dns_provider_secret_key" => super::types::SecretKind::DnsProviderSecretKey,
             "acme_account_key" => super::types::SecretKind::AcmeAccountKey,
             "managed_private_key" => super::types::SecretKind::ManagedPrivateKey,
             other => return Err(anyhow!("unknown secret kind: {other}")),

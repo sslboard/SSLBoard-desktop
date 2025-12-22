@@ -15,6 +15,10 @@ pub trait DnsProviderAdapter: Send + Sync {
     fn cleanup_txt(&self, record_name: &str) -> Result<()>;
 }
 
+pub(crate) fn matches_zone(domain_suffix: &str, zone_name: &str) -> bool {
+    zone_name == domain_suffix || domain_suffix.ends_with(&format!(".{}", zone_name))
+}
+
 pub struct UnsupportedDnsProviderAdapter {
     reason: String,
 }
@@ -141,3 +145,19 @@ pub fn adapter_for_provider(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::matches_zone;
+
+    #[test]
+    fn matches_exact_zone_name() {
+        assert!(matches_zone("example.com", "example.com"));
+        assert!(!matches_zone("example.com", "other.com"));
+    }
+
+    #[test]
+    fn matches_subdomain_suffix() {
+        assert!(matches_zone("sub.example.com", "example.com"));
+        assert!(!matches_zone("example.com", "sub.example.com"));
+    }
+}

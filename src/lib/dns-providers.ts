@@ -28,6 +28,8 @@ export type CreateDnsProviderRequest = {
   label: string;
   domain_suffixes: string;
   api_token?: string;
+  route53_access_key?: string;
+  route53_secret_key?: string;
   config?: Record<string, unknown> | null;
 };
 
@@ -36,8 +38,17 @@ export type UpdateDnsProviderRequest = {
   label: string;
   domain_suffixes: string;
   api_token?: string;
+  route53_access_key?: string;
+  route53_secret_key?: string;
   config?: Record<string, unknown> | null;
 };
+
+export type DnsProviderErrorCategory =
+  | "auth_error"
+  | "not_found"
+  | "rate_limited"
+  | "network_error"
+  | "unknown";
 
 export type DnsProviderTestResult = {
   success: boolean;
@@ -45,11 +56,25 @@ export type DnsProviderTestResult = {
   value?: string | null;
   propagation?: PropagationResult | null;
   error?: string | null;
+  error_category?: DnsProviderErrorCategory | null;
   error_stage?: string | null;
   elapsed_ms: number;
   create_ms?: number | null;
   propagation_ms?: number | null;
   cleanup_ms?: number | null;
+};
+
+export type DnsProviderTokenValidationResult = {
+  success: boolean;
+  error?: string | null;
+  error_category?: DnsProviderErrorCategory | null;
+};
+
+export type ValidateDnsProviderTokenRequest = {
+  provider_type: DnsProviderType;
+  api_token?: string;
+  route53_access_key?: string;
+  route53_secret_key?: string;
 };
 
 export async function listDnsProviders(): Promise<DnsProviderRecord[]> {
@@ -76,6 +101,12 @@ export async function testDnsProvider(
   providerId: string,
 ): Promise<DnsProviderTestResult> {
   return invoke("dns_provider_test", { req: { provider_id: providerId } });
+}
+
+export async function validateDnsProviderToken(
+  req: ValidateDnsProviderTokenRequest,
+): Promise<DnsProviderTokenValidationResult> {
+  return invoke("dns_provider_validate_token", { req });
 }
 
 export async function resolveDnsProvider(

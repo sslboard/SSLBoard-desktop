@@ -22,6 +22,10 @@ export function DnsProvidersPage() {
     testResults,
     testLoading,
     handleTest,
+    tokenTestResult,
+    tokenTestLoading,
+    handleTokenTest,
+    clearTokenTestResult,
   } = useDnsProviderManager();
 
   return (
@@ -58,6 +62,10 @@ export function DnsProvidersPage() {
           saving={saving}
           onSubmit={handleSubmit}
           onCancel={resetForm}
+          tokenTestResult={tokenTestResult}
+          tokenTestLoading={tokenTestLoading}
+          onTestToken={() => void handleTokenTest()}
+          onTokenInputChange={clearTokenTestResult}
         />
       </div>
     </div>

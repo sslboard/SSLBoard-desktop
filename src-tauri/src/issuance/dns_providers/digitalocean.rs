@@ -32,13 +32,53 @@ impl DigitalOceanAdapter {
         Self { api_token, domain }
     }
 
+    fn format_txt_content(value: &str) -> String {
+        let trimmed = value.trim();
+        if trimmed.starts_with('"') && trimmed.ends_with('"') {
+            trimmed.to_string()
+        } else {
+            format!("\"{}\"", trimmed.trim_matches('"'))
+        }
+    }
+
+    fn list_txt_records(&self, record_name: &str) -> Result<Vec<DigitalOceanDnsRecordListItem>> {
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(&format!(
+                "https://api.digitalocean.com/v2/domains/{}/records?type=TXT&name={}",
+                self.domain, record_name
+            ))
+            .header("Authorization", format!("Bearer {}", self.api_token))
+            .send()
+            .context("Failed to list DigitalOcean DNS records")?;
+
+        if !response.status().is_success() {
+            if response.status() == 401 || response.status() == 403 {
+                return Err(anyhow!("DigitalOcean authentication failed"));
+            }
+            if response.status() == 429 {
+                return Err(anyhow!("DigitalOcean rate limit exceeded"));
+            }
+            return Err(anyhow!(
+                "DigitalOcean API error: {}",
+                response.status()
+            ));
+        }
+
+        let list_result: DigitalOceanDnsRecordListResponse = response
+            .json()
+            .context("Failed to parse DigitalOcean DNS record list")?;
+
+        Ok(list_result.domain_records)
+    }
+
     fn create_txt_record(&self, record_name: &str, value: &str) -> Result<u64> {
         let client = reqwest::blocking::Client::new();
 
         let record = DigitalOceanDnsRecord {
             record_type: "TXT".to_string(),
             name: record_name.to_string(),
-            data: value.to_string(),
+            data: Self::format_txt_content(value),
             ttl: 300,
         };
 
@@ -71,69 +111,111 @@ impl DigitalOceanAdapter {
         Ok(result.domain_record.id)
     }
 
-    fn delete_txt_record(&self, record_name: &str) -> Result<()> {
+    fn update_txt_record(&self, record_id: u64, record_name: &str, value: &str) -> Result<()> {
         let client = reqwest::blocking::Client::new();
-
-        // First, find the record ID
+        let record = DigitalOceanDnsRecord {
+            record_type: "TXT".to_string(),
+            name: record_name.to_string(),
+            data: Self::format_txt_content(value),
+            ttl: 300,
+        };
         let response = client
-            .get(&format!(
-                "https://api.digitalocean.com/v2/domains/{}/records?type=TXT&name={}",
-                self.domain, record_name
-            ))
-            .header("Authorization", format!("Bearer {}", self.api_token))
-            .send()
-            .context("Failed to list DigitalOcean DNS records")?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("Failed to list DigitalOcean DNS records"));
-        }
-
-        #[derive(Deserialize)]
-        struct DigitalOceanDnsRecordListResponse {
-            domain_records: Vec<DigitalOceanDnsRecordListItem>,
-        }
-
-        #[derive(Deserialize)]
-        struct DigitalOceanDnsRecordListItem {
-            id: u64,
-            name: String,
-        }
-
-        let list_result: DigitalOceanDnsRecordListResponse = response
-            .json()
-            .context("Failed to parse DigitalOcean DNS record list")?;
-
-        let record_id = list_result
-            .domain_records
-            .iter()
-            .find(|r| r.name == record_name)
-            .ok_or_else(|| anyhow!("TXT record not found: {}", record_name))?
-            .id;
-
-        // Delete the record
-        let delete_response = client
-            .delete(&format!(
+            .put(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records/{}",
                 self.domain, record_id
             ))
             .header("Authorization", format!("Bearer {}", self.api_token))
+            .header("Content-Type", "application/json")
+            .json(&record)
             .send()
-            .context("Failed to delete DigitalOcean DNS record")?;
+            .context("Failed to update DigitalOcean DNS record")?;
 
-        if !delete_response.status().is_success() {
+        if !response.status().is_success() {
+            if response.status() == 401 || response.status() == 403 {
+                return Err(anyhow!("DigitalOcean authentication failed"));
+            }
+            if response.status() == 429 {
+                return Err(anyhow!("DigitalOcean rate limit exceeded"));
+            }
+            let error_text = response.text().unwrap_or_default();
+            return Err(anyhow!("DigitalOcean API error: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    fn upsert_txt_record(&self, record_name: &str, value: &str) -> Result<()> {
+        let existing = self.list_txt_records(record_name)?;
+        if existing.is_empty() {
+            self.create_txt_record(record_name, value)?;
+        } else {
+            for record in &existing {
+                self.update_txt_record(record.id, record_name, value)?;
+            }
+        }
+
+        let updated = self.list_txt_records(record_name)?;
+        let expected = Self::format_txt_content(value);
+        let matched = updated
+            .iter()
+            .any(|record| record.data.as_deref() == Some(expected.as_str()));
+        if !matched {
             return Err(anyhow!(
-                "Failed to delete DigitalOcean DNS record: {}",
-                delete_response.status()
+                "DigitalOcean record verification failed for {}",
+                record_name
             ));
+        }
+        Ok(())
+    }
+
+    fn delete_txt_record(&self, record_name: &str) -> Result<()> {
+        let client = reqwest::blocking::Client::new();
+
+        let list_result = self.list_txt_records(record_name)?;
+        let record_ids: Vec<u64> = list_result.iter().map(|record| record.id).collect();
+        if record_ids.is_empty() {
+            return Err(anyhow!("TXT record not found: {}", record_name));
+        }
+
+        for record_id in record_ids {
+            let delete_response = client
+                .delete(&format!(
+                    "https://api.digitalocean.com/v2/domains/{}/records/{}",
+                    self.domain, record_id
+                ))
+                .header("Authorization", format!("Bearer {}", self.api_token))
+                .send()
+                .context("Failed to delete DigitalOcean DNS record")?;
+
+            if !delete_response.status().is_success() {
+                return Err(anyhow!(
+                    "Failed to delete DigitalOcean DNS record: {}",
+                    delete_response.status()
+                ));
+            }
         }
 
         Ok(())
     }
 }
 
+#[derive(Deserialize)]
+struct DigitalOceanDnsRecordListResponse {
+    domain_records: Vec<DigitalOceanDnsRecordListItem>,
+}
+
+#[derive(Deserialize)]
+struct DigitalOceanDnsRecordListItem {
+    id: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    data: Option<String>,
+}
+
 impl DnsProviderAdapter for DigitalOceanAdapter {
     fn create_txt(&self, record_name: &str, value: &str) -> Result<()> {
-        self.create_txt_record(record_name, value)?;
+        self.upsert_txt_record(record_name, value)?;
         Ok(())
     }
 
@@ -142,4 +224,3 @@ impl DnsProviderAdapter for DigitalOceanAdapter {
         Ok(())
     }
 }
-

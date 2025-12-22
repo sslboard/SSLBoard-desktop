@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 
-use super::DnsProviderAdapter;
+use super::{matches_zone, DnsProviderAdapter};
 
 pub struct Route53Adapter {
     access_key: String,
@@ -16,6 +16,15 @@ impl Route53Adapter {
             secret_key,
             hosted_zone_cache: None,
             domain_suffix,
+        }
+    }
+
+    fn format_txt_content(value: &str) -> String {
+        let trimmed = value.trim();
+        if trimmed.starts_with('"') && trimmed.ends_with('"') {
+            trimmed.to_string()
+        } else {
+            format!("\"{}\"", trimmed.trim_matches('"'))
         }
     }
 
@@ -59,9 +68,7 @@ impl Route53Adapter {
                 let name = zone.name();
                 let id = zone.id();
                 let zone_name = name.trim_end_matches('.');
-                if zone_name == self.domain_suffix
-                    || self.domain_suffix.ends_with(&format!(".{}", zone_name))
-                {
+                if matches_zone(&self.domain_suffix, zone_name) {
                     let zone_id = id.to_string();
                     self.hosted_zone_cache = Some(zone_id.clone());
                     return Ok(zone_id);
@@ -82,6 +89,7 @@ impl Route53Adapter {
         use aws_sdk_route53::types::{Change, ChangeBatch, ResourceRecord, ResourceRecordSet, RrType};
 
         let hosted_zone_id = self.discover_hosted_zone_id().await?;
+        let formatted_value = Self::format_txt_content(value);
 
         let credentials = Credentials::new(
             &self.access_key,
@@ -101,7 +109,7 @@ impl Route53Adapter {
         let record_set = ResourceRecordSet::builder()
             .name(record_name)
             .set_resource_records(Some(vec![ResourceRecord::builder()
-                .value(value)
+                .value(formatted_value.clone())
                 .build()
                 .map_err(|e| anyhow!("Failed to build ResourceRecord: {}", e))?]))
             .ttl(300)
@@ -110,7 +118,7 @@ impl Route53Adapter {
             .map_err(|e| anyhow!("Failed to build ResourceRecordSet: {}", e))?;
 
         let change = Change::builder()
-            .action(aws_sdk_route53::types::ChangeAction::Create)
+            .action(aws_sdk_route53::types::ChangeAction::Upsert)
             .resource_record_set(record_set)
             .build()
             .map_err(|e| anyhow!("Failed to build Change: {}", e))?;
@@ -127,6 +135,9 @@ impl Route53Adapter {
             .send()
             .await
             .context("Failed to create Route 53 DNS record")?;
+
+        self.verify_txt_record(&client, &hosted_zone_id, record_name, &formatted_value)
+            .await?;
 
         Ok(())
     }
@@ -193,6 +204,39 @@ impl Route53Adapter {
 
         Ok(())
     }
+
+    async fn verify_txt_record(
+        &self,
+        client: &aws_sdk_route53::Client,
+        hosted_zone_id: &str,
+        record_name: &str,
+        expected_value: &str,
+    ) -> Result<()> {
+        use aws_sdk_route53::types::RrType;
+
+        let response = client
+            .list_resource_record_sets()
+            .hosted_zone_id(hosted_zone_id)
+            .send()
+            .await
+            .context("Failed to list Route 53 DNS records")?;
+
+        let record_set = response
+            .resource_record_sets()
+            .iter()
+            .find(|rs| rs.name() == record_name && rs.r#type() == &RrType::Txt)
+            .ok_or_else(|| anyhow!("TXT record not found: {}", record_name))?;
+
+        let matched = record_set
+            .resource_records()
+            .iter()
+            .any(|record| record.value() == expected_value);
+        if !matched {
+            return Err(anyhow!("Route 53 record verification failed"));
+        }
+
+        Ok(())
+    }
 }
 
 impl DnsProviderAdapter for Route53Adapter {
@@ -219,4 +263,3 @@ impl DnsProviderAdapter for Route53Adapter {
         Ok(())
     }
 }
-

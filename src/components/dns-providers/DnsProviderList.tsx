@@ -9,7 +9,11 @@ import {
 import { Button } from "../ui/button";
 import type { DnsProviderRecord, DnsProviderTestResult } from "../../lib/dns-providers";
 import { cn } from "../../lib/utils";
-import { PROVIDER_LABELS } from "./provider-constants";
+import {
+  ERROR_CATEGORY_LABELS,
+  ERROR_CATEGORY_SUGGESTIONS,
+  PROVIDER_LABELS,
+} from "./provider-constants";
 
 function formatDate(iso: string) {
   const date = new Date(iso);
@@ -146,6 +150,12 @@ export function DnsProviderList({
                       </span>
                     </div>
                   ) : null}
+                  {testResult && !testResult.success && testResult.error_category ? (
+                    <div className="mt-1 text-xs text-rose-700">
+                      {ERROR_CATEGORY_LABELS[testResult.error_category]} ·{" "}
+                      {ERROR_CATEGORY_SUGGESTIONS[testResult.error_category]}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -183,7 +193,7 @@ export function DnsProviderList({
               {confirmDeleteId === provider.id ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
                   <span className="font-semibold">
-                    Remove this provider and its stored token?
+                    Remove this provider and its stored secrets?
                   </span>
                   <Button
                     type="button"

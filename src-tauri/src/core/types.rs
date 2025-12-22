@@ -214,6 +214,16 @@ pub struct TestDnsProviderRequest {
     pub provider_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ValidateDnsProviderTokenRequest {
+    pub provider_type: DnsProviderType,
+    pub api_token: Option<String>,
+    #[serde(rename = "route53_access_key")]
+    pub route53_access_key: Option<String>,
+    #[serde(rename = "route53_secret_key")]
+    pub route53_secret_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DnsProviderErrorCategory {
@@ -237,6 +247,13 @@ pub struct DnsProviderTestResult {
     pub create_ms: Option<u64>,
     pub propagation_ms: Option<u64>,
     pub cleanup_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DnsProviderTokenValidationResult {
+    pub success: bool,
+    pub error: Option<String>,
+    pub error_category: Option<DnsProviderErrorCategory>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

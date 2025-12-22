@@ -71,6 +71,10 @@ export function SecretReferenceManager() {
     switch (kind) {
       case "dns_provider_token":
         return "DNS provider token";
+      case "dns_provider_access_key":
+        return "DNS provider access key";
+      case "dns_provider_secret_key":
+        return "DNS provider secret key";
       case "acme_account_key":
         return "ACME account key";
       case "managed_private_key":

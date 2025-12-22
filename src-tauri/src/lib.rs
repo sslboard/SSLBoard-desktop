@@ -6,10 +6,11 @@ mod storage;
 use core::commands::{
     check_dns_propagation, complete_managed_issuance, create_issuer, create_secret_ref,
     delete_issuer, delete_secret_ref, dns_provider_create, dns_provider_delete, dns_provider_list,
-    dns_provider_test, dns_provider_update, dns_resolve_provider, get_certificate, greet,
-    is_vault_unlocked, list_certificates, list_issuers, list_secret_refs, lock_vault,
-    prepare_dns_challenge, seed_fake_certificate, select_issuer, set_issuer_disabled,
-    start_managed_issuance, unlock_vault, update_issuer, update_secret_ref,
+    dns_provider_test, dns_provider_update, dns_provider_validate_token, dns_resolve_provider,
+    get_certificate, greet, is_vault_unlocked, list_certificates, list_issuers, list_secret_refs,
+    lock_vault, prepare_dns_challenge, seed_fake_certificate, select_issuer,
+    set_issuer_disabled, start_managed_issuance, unlock_vault, update_issuer,
+    update_secret_ref,
 };
 use secrets::manager::SecretManager;
 use storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore};
@@ -62,6 +63,7 @@ pub fn run() {
             dns_provider_update,
             dns_provider_delete,
             dns_provider_test,
+            dns_provider_validate_token,
             dns_resolve_provider,
             start_managed_issuance,
             complete_managed_issuance

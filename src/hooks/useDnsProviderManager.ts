@@ -5,9 +5,12 @@ import {
   listDnsProviders,
   testDnsProvider,
   updateDnsProvider,
+  validateDnsProviderToken,
   type CreateDnsProviderRequest,
   type DnsProviderRecord,
   type DnsProviderTestResult,
+  type DnsProviderTokenValidationResult,
+  type ValidateDnsProviderTokenRequest,
 } from "../lib/dns-providers";
 import { normalizeError } from "../lib/errors";
 
@@ -22,6 +25,8 @@ export function useDnsProviderManager() {
     label: "",
     domain_suffixes: "",
     api_token: "",
+    route53_access_key: "",
+    route53_secret_key: "",
     config: null,
   });
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
@@ -31,6 +36,9 @@ export function useDnsProviderManager() {
   );
   const [testLoading, setTestLoading] = useState<Record<string, boolean>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tokenTestResult, setTokenTestResult] =
+    useState<DnsProviderTokenValidationResult | null>(null);
+  const [tokenTestLoading, setTokenTestLoading] = useState(false);
 
   useEffect(() => {
     void refreshProviders();
@@ -58,8 +66,11 @@ export function useDnsProviderManager() {
       label: "",
       domain_suffixes: "",
       api_token: "",
+      route53_access_key: "",
+      route53_secret_key: "",
       config: null,
     });
+    setTokenTestResult(null);
   }
 
   function startEdit(provider: DnsProviderRecord) {
@@ -71,8 +82,11 @@ export function useDnsProviderManager() {
       label: provider.label,
       domain_suffixes: provider.domain_suffixes.join(", "),
       api_token: "",
+      route53_access_key: "",
+      route53_secret_key: "",
       config: provider.config ?? null,
     });
+    setTokenTestResult(null);
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -87,6 +101,8 @@ export function useDnsProviderManager() {
           label: formState.label.trim(),
           domain_suffixes: formState.domain_suffixes,
           api_token: formState.api_token,
+          route53_access_key: formState.route53_access_key,
+          route53_secret_key: formState.route53_secret_key,
           config: formState.config ?? null,
         });
         setProviders((prev) => [created, ...prev]);
@@ -96,6 +112,8 @@ export function useDnsProviderManager() {
           label: formState.label.trim(),
           domain_suffixes: formState.domain_suffixes,
           api_token: formState.api_token || undefined,
+          route53_access_key: formState.route53_access_key || undefined,
+          route53_secret_key: formState.route53_secret_key || undefined,
           config: formState.config ?? null,
         });
         setProviders((prev) =>
@@ -141,6 +159,34 @@ export function useDnsProviderManager() {
     }
   }
 
+  async function handleTokenTest() {
+    if (tokenTestLoading) return;
+    setTokenTestLoading(true);
+    try {
+      const payload: ValidateDnsProviderTokenRequest = {
+        provider_type: formState.provider_type,
+        api_token: formState.api_token,
+        route53_access_key: formState.route53_access_key,
+        route53_secret_key: formState.route53_secret_key,
+      };
+      const result = await validateDnsProviderToken(payload);
+      setTokenTestResult(result);
+    } catch (err) {
+      setTokenTestResult({
+        success: false,
+        error: normalizeError(err),
+      });
+    } finally {
+      setTokenTestLoading(false);
+    }
+  }
+
+  function clearTokenTestResult() {
+    if (tokenTestResult) {
+      setTokenTestResult(null);
+    }
+  }
+
   return {
     providers,
     loading,
@@ -159,5 +205,9 @@ export function useDnsProviderManager() {
     testResults,
     testLoading,
     handleTest,
+    tokenTestResult,
+    tokenTestLoading,
+    handleTokenTest,
+    clearTokenTestResult,
   };
 }

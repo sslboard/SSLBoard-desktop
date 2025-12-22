@@ -325,6 +325,22 @@ mod tests {
         assert!(matches!(result.state, PropagationState::Pending));
     }
 
+    #[test]
+    fn record_name_adds_acme_prefix() {
+        assert_eq!(
+            ManualDnsAdapter::record_name("example.com"),
+            "_acme-challenge.example.com"
+        );
+    }
+
+    #[test]
+    fn record_name_preserves_existing_prefix() {
+        assert_eq!(
+            ManualDnsAdapter::record_name("_acme-challenge.example.com"),
+            "_acme-challenge.example.com"
+        );
+    }
+
     /// Live-check against real DNS for debugging the ezs3.net TXT record.
     /// Ignored by default because it requires network access.
     #[test]
