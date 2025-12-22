@@ -1,41 +1,10 @@
 import { ShieldCheck } from "lucide-react";
 import type { CertificateRecord } from "../../lib/certificates";
-
-function formatDate(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function daysUntil(dateString: string) {
-  const now = Date.now();
-  const target = new Date(dateString).getTime();
-  return Math.round((target - now) / (1000 * 60 * 60 * 24));
-}
-
-function certificateStatus(record: CertificateRecord) {
-  const days = daysUntil(record.not_after);
-  if (days < 0) {
-    return { label: "Expired", tone: "text-red-500 bg-red-50 dark:bg-red-950/40" };
-  }
-  if (days < 30) {
-    return {
-      label: `Expiring in ${days}d`,
-      tone: "text-amber-500 bg-amber-50 dark:bg-amber-950/40",
-    };
-  }
-  return {
-    label: `Healthy · ${days}d left`,
-    tone: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40",
-  };
-}
-
-function primarySubject(record: CertificateRecord) {
-  return record?.subjects[0] ?? record?.sans[0] ?? record?.domain_roots[0] ?? "—";
-}
+import {
+  certificateStatus,
+  formatCertificateDate,
+  primarySubject,
+} from "./certificate-utils";
 
 interface InventoryEntryProps {
   record: CertificateRecord;
@@ -75,10 +44,9 @@ export function InventoryEntry({ record, isSelected, onClick }: InventoryEntryPr
           Serial {record.serial}
         </div>
         <div className="text-xs text-muted-foreground">
-          Valid {formatDate(record.not_before)} – {formatDate(record.not_after)}
+          Valid {formatCertificateDate(record.not_before)} – {formatCertificateDate(record.not_after)}
         </div>
       </div>
     </button>
   );
 }
-

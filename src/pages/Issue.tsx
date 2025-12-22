@@ -1,20 +1,19 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Copy, Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { PageHeader } from "../components/page-header";
 import { checkDnsPropagation, type PropagationResult } from "../lib/dns";
 import {
-  resolveDnsProvider,
-  type DnsProviderResolution,
-} from "../lib/dns-providers";
-import {
   completeManagedIssuance,
   startManagedIssuance,
   type StartIssuanceResponse,
 } from "../lib/issuance";
-import { listIssuers, type IssuerConfig } from "../lib/issuers";
-import { cn } from "../lib/utils";
+import { normalizeError } from "../lib/errors";
+import { InstructionCard } from "../components/issue/InstructionCard";
+import { ProviderPreviewRow } from "../components/issue/ProviderPreviewRow";
+import { useIssuerOptions } from "../hooks/useIssuerOptions";
+import { useProviderPreview } from "../hooks/useProviderPreview";
 
 type StatusMap = Record<string, PropagationResult | null>;
 
@@ -27,116 +26,27 @@ export function IssuePage() {
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [issuers, setIssuers] = useState<IssuerConfig[]>([]);
-  const [issuerLoading, setIssuerLoading] = useState(false);
-  const [issuerError, setIssuerError] = useState<string | null>(null);
-  const [selectedIssuer, setSelectedIssuer] = useState<IssuerConfig | null>(null);
-  const [providerPreview, setProviderPreview] = useState<
-    Record<string, DnsProviderResolution | null>
-  >({});
-  const [providerLoading, setProviderLoading] = useState(false);
-  const [providerError, setProviderError] = useState<string | null>(null);
+  const {
+    issuers,
+    issuerLoading,
+    issuerError,
+    selectedIssuer,
+    selectIssuerById,
+  } = useIssuerOptions();
 
   const parsedDomains = domainsInput
     .split(/[\s,]+/)
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
 
+  const { providerPreview, providerLoading, providerError } =
+    useProviderPreview(parsedDomains);
+
   useEffect(() => {
     if (!startResult) {
       setStatusMap({});
     }
   }, [startResult]);
-
-  useEffect(() => {
-    let active = true;
-    async function loadData() {
-      setIssuerLoading(true);
-      setIssuerError(null);
-      try {
-        const issuerList = await listIssuers();
-        if (!active) return;
-        setIssuers(issuerList);
-        setSelectedIssuer(
-          issuerList.find((issuer) => !issuer.disabled) ?? issuerList[0] ?? null,
-        );
-      } catch (err) {
-        if (active) {
-          setIssuerError(err instanceof Error ? err.message : "Failed to load issuers.");
-        }
-      } finally {
-        if (active) {
-          setIssuerLoading(false);
-        }
-      }
-    }
-    void loadData();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    // keep selection in sync when issuers refresh
-    if (!selectedIssuer && issuers.length > 0) {
-      setSelectedIssuer(
-        issuers.find((issuer) => !issuer.disabled) ?? issuers[0] ?? null,
-      );
-    }
-  }, [issuers, selectedIssuer]);
-
-  useEffect(() => {
-    let active = true;
-    if (!parsedDomains.length) {
-      setProviderPreview({});
-      setProviderError(null);
-      return undefined;
-    }
-    setProviderLoading(true);
-    setProviderError(null);
-    const timer = window.setTimeout(() => {
-      Promise.all(
-        parsedDomains.map(async (domain) => {
-          try {
-            const resolution = await resolveDnsProvider(domain);
-            return { domain, resolution };
-          } catch (err) {
-            return { domain, error: normalizeError(err) };
-          }
-        }),
-      )
-        .then((results) => {
-          if (!active) return;
-          const next: Record<string, DnsProviderResolution | null> = {};
-          let errorMessage: string | null = null;
-          results.forEach((item) => {
-            if ("error" in item) {
-              next[item.domain] = null;
-              errorMessage = item.error;
-            } else {
-              next[item.domain] = item.resolution;
-            }
-          });
-          setProviderPreview(next);
-          setProviderError(errorMessage);
-        })
-        .catch((err) => {
-          if (active) {
-            setProviderError(normalizeError(err));
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setProviderLoading(false);
-          }
-        });
-    }, 300);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [parsedDomains.join("|")]);
 
   const issuerLabel = selectedIssuer?.label ?? "No issuer selected";
   const issuerEnvironment = selectedIssuer?.environment ?? "staging";
@@ -151,8 +61,7 @@ export function IssuePage() {
   );
 
   function handleSelectIssuer(issuerId: string) {
-    const issuer = issuers.find((entry) => entry.issuer_id === issuerId) ?? null;
-    setSelectedIssuer(issuer);
+    selectIssuerById(issuerId);
   }
 
   async function handleStart() {
@@ -420,131 +329,4 @@ export function IssuePage() {
       </div>
     </div>
   );
-}
-
-function InstructionCard({
-  record,
-  status,
-}: {
-  record: StartIssuanceResponse["dns_records"][number];
-  status: PropagationResult | null;
-}) {
-  return (
-    <div className="space-y-2 rounded-lg border bg-background p-3">
-      <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-muted-foreground">
-        {_acme(record.record_name)}
-        {status ? <StatusBadge state={status.state} /> : null}
-      </div>
-      <InstructionField label="Record name" value={record.record_name} />
-      <InstructionField label="Value" value={record.value} />
-      <InstructionField label="Zone" value={record.zone} />
-    </div>
-  );
-}
-
-function ProviderPreviewRow({
-  domain,
-  resolution,
-}: {
-  domain: string;
-  resolution: DnsProviderResolution | null;
-}) {
-  if (!resolution) {
-    return (
-      <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <span>{domain}</span>
-        <span>Unable to resolve</span>
-      </div>
-    );
-  }
-
-  const provider = resolution.provider;
-  const ambiguous = resolution.ambiguous.length > 1;
-  const label = provider?.label ?? "Manual DNS required";
-  const type = provider?.provider_type ?? "manual";
-  const suffix = resolution.matched_suffix;
-
-  return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-foreground">{domain}</span>
-        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase text-primary">
-          {type}
-        </span>
-      </div>
-      <div className="mt-1 text-muted-foreground">
-        {label}
-        {suffix ? ` · matches ${suffix}` : ""}
-      </div>
-      {ambiguous ? (
-        <div className="mt-1 flex items-center gap-2 text-amber-700">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          Ambiguous: {resolution.ambiguous.map((entry) => entry.label).join(", ")}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function InstructionField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/60 px-3 py-2 font-mono text-xs">
-        <span className="truncate">{value}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => void navigator.clipboard.writeText(value)}
-        >
-          <Copy className="mr-1 h-3.5 w-3.5" />
-          Copy
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ state }: { state: PropagationResult["state"] }) {
-  const styles = {
-    found: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    pending: "bg-amber-50 text-amber-700 border-amber-200",
-    wrong_content: "bg-orange-100 text-orange-700 border-orange-200",
-    nx_domain: "bg-rose-100 text-rose-700 border-rose-200",
-    error: "bg-rose-100 text-rose-700 border-rose-200",
-  } as const;
-
-  const label = {
-    found: "Found",
-    pending: "Waiting",
-    wrong_content: "Mismatch",
-    nx_domain: "Not found",
-    error: "Error",
-  }[state];
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[11px] font-semibold",
-        styles[state],
-      )}
-    >
-      {label}
-    </span>
-  );
-}
-
-function _acme(recordName: string) {
-  return recordName.startsWith("_acme-challenge.")
-    ? recordName.replace("_acme-challenge.", "")
-    : recordName;
-}
-
-function normalizeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  return "Unexpected error";
 }

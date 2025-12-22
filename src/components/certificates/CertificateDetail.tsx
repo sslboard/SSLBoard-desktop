@@ -1,50 +1,8 @@
 import { AlertCircle, Clock } from "lucide-react";
 import type { CertificateRecord } from "../../lib/certificates";
-
-function formatDate(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function primarySubject(record: CertificateRecord | null) {
-  return record?.subjects[0] ?? record?.sans[0] ?? record?.domain_roots[0] ?? "—";
-}
-
-function SubjectPill({ text }: { text: string }) {
-  return (
-    <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground">
-      {text}
-    </span>
-  );
-}
-
-function DetailItem({
-  label,
-  value,
-  truncate = false,
-}: {
-  label: string;
-  value: string;
-  truncate?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border bg-muted/40 p-3">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div
-        className={`text-sm font-semibold text-foreground ${truncate ? 'truncate' : ''}`}
-        title={truncate ? value : undefined}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
+import { DetailItem } from "./DetailItem";
+import { SubjectPill } from "./SubjectPill";
+import { formatCertificateDate, primarySubject } from "./certificate-utils";
 
 interface CertificateDetailProps {
   selected: CertificateRecord | null;
@@ -95,7 +53,7 @@ export function CertificateDetail({
             <DetailItem label="Serial" value={selected.serial} />
             <DetailItem
               label="Validity"
-              value={`${formatDate(selected.not_before)} – ${formatDate(selected.not_after)}`}
+              value={`${formatCertificateDate(selected.not_before)} – ${formatCertificateDate(selected.not_after)}`}
             />
             <DetailItem
               label="Fingerprint (SHA-256)"
@@ -136,4 +94,3 @@ export function CertificateDetail({
     </div>
   );
 }
-
