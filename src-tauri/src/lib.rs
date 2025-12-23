@@ -8,14 +8,17 @@ use core::commands::{
     check_dns_propagation, complete_managed_issuance, create_issuer, create_secret_ref,
     delete_issuer, delete_secret_ref, dns_provider_create, dns_provider_delete, dns_provider_list,
     dns_provider_test, dns_provider_update, dns_provider_validate_token, dns_resolve_provider,
-    export_certificate_pem, get_certificate, greet, is_vault_unlocked, list_certificates,
-    list_issuers, list_secret_refs,
+    export_certificate_pem, get_certificate, get_preference, greet, is_vault_unlocked,
+    list_certificates, list_issuers, list_secret_refs,
     lock_vault, prepare_dns_challenge, seed_fake_certificate, select_issuer,
     start_managed_issuance, unlock_vault, update_issuer,
-    update_secret_ref,
+    update_secret_ref, set_preference,
 };
 use secrets::manager::SecretManager;
-use storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore};
+use storage::{
+    dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore,
+    preferences::PreferencesStore,
+};
 use tauri::Manager;
 use std::sync::Once;
 
@@ -41,6 +44,9 @@ pub fn run() {
 
             let dns_store = DnsConfigStore::initialize(app.handle().clone())?;
             app.manage(dns_store);
+
+            let preferences_store = PreferencesStore::initialize(app.handle().clone())?;
+            app.manage(preferences_store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -71,7 +77,9 @@ pub fn run() {
             dns_provider_validate_token,
             dns_resolve_provider,
             start_managed_issuance,
-            complete_managed_issuance
+            complete_managed_issuance,
+            get_preference,
+            set_preference
         ])
         .run(tauri::generate_context!())
     {

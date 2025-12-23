@@ -88,6 +88,23 @@ pub enum ExportCertificateResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreferenceEntry {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetPreferenceRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetPreferenceRequest {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSecretRequest {
     pub label: String,
     pub kind: SecretKind,

@@ -140,6 +140,7 @@ Test system behavior under concurrent load and resource constraints.
 Test certificate distribution and system integration.
 
 - **Certificate Distribution**: Export certificates for different systems
+- **Export Destination Persistence**: Choose an export folder, close the modal, reopen it, and confirm the previous destination is prefilled (fallback to Downloads when missing)
 - **System Integration**: Kubernetes secrets, load balancers, web servers
 - **GitOps Workflow**: Certificate artifacts for infrastructure-as-code
 - **Backup/Restore**: App data backup with certificates and secrets

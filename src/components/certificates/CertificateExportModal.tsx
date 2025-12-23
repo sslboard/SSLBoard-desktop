@@ -1,8 +1,14 @@
+import { downloadDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 
 import type { CertificateRecord, ExportBundle } from "../../lib/certificates";
 import { exportCertificatePem } from "../../lib/certificates";
+import {
+  EXPORT_DESTINATION_PREFERENCE,
+  getPreference,
+  setPreference,
+} from "../../lib/preferences";
 import { Button } from "../ui/button";
 import { exportFolderDefault } from "./certificate-utils";
 
@@ -42,6 +48,7 @@ export function CertificateExportModal({
     if (!isOpen) {
       return;
     }
+    let isActive = true;
     setBundle("fullchain");
     setIncludeKey(false);
     setConfirmKeyExport(false);
@@ -49,19 +56,66 @@ export function CertificateExportModal({
     setFolderName(defaultFolder);
     setError(null);
     setSuccessPath(null);
+
+    const loadDestination = async () => {
+      try {
+        const saved = await getPreference(EXPORT_DESTINATION_PREFERENCE);
+        const fallback = saved?.value ?? (await downloadDir());
+        if (!isActive) {
+          return;
+        }
+        setDestinationDir(fallback);
+      } catch (err) {
+        if (!isActive) {
+          return;
+        }
+        let fallbackLoaded = false;
+        try {
+          const fallback = await downloadDir();
+          if (isActive) {
+            setDestinationDir(fallback);
+            fallbackLoaded = true;
+          }
+        } catch {
+          // Ignore download dir failure and keep destination unset.
+        }
+        if (!fallbackLoaded) {
+          setError("Unable to load saved export destination.");
+        }
+      }
+    };
+
+    void loadDestination();
+    return () => {
+      isActive = false;
+    };
   }, [defaultFolder, isOpen]);
 
   if (!isOpen) {
     return null;
   }
 
+  async function persistDestinationPreference(value: string) {
+    try {
+      await setPreference(EXPORT_DESTINATION_PREFERENCE, value);
+    } catch (err) {
+      console.warn("Failed to save export destination preference.", err);
+    }
+  }
+
   async function handleSelectDestination() {
     setError(null);
     const selection = await open({ directory: true, multiple: false });
+    let nextDestination: string | null = null;
     if (typeof selection === "string") {
-      setDestinationDir(selection);
+      nextDestination = selection;
     } else if (Array.isArray(selection) && selection[0]) {
-      setDestinationDir(selection[0]);
+      nextDestination = selection[0];
+    }
+
+    if (nextDestination) {
+      setDestinationDir(nextDestination);
+      await persistDestinationPreference(nextDestination);
     }
   }
 
@@ -91,8 +145,12 @@ export function CertificateExportModal({
       });
 
       if (response.status === "overwrite_required") {
+        const existingNames = response.existing_files.map((path) => {
+          const parts = path.split(/[\\/]/);
+          return parts[parts.length - 1] ?? path;
+        });
         const confirmed = window.confirm(
-          `One or more files already exist:\n${response.existing_files.join("\n")}\n\nOverwrite these files?`,
+          `One or more files already exist:\n${existingNames.join("\n")}\n\nOverwrite these files?`,
         );
         if (confirmed) {
           await handleExport(true);
@@ -102,6 +160,9 @@ export function CertificateExportModal({
         return;
       }
 
+      if (destinationDir) {
+        await persistDestinationPreference(destinationDir);
+      }
       setSuccessPath(response.output_dir);
     } catch (err) {
       const message =

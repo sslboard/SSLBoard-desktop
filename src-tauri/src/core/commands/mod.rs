@@ -10,6 +10,7 @@ pub mod inventory;
 pub mod issuance;
 pub mod issuers;
 pub mod misc;
+pub mod preferences;
 pub mod secrets;
 
 pub use dns_challenge::{check_dns_propagation, prepare_dns_challenge};
@@ -24,6 +25,7 @@ pub use issuers::{
     create_issuer, delete_issuer, list_issuers, select_issuer, update_issuer,
 };
 pub use misc::greet;
+pub use preferences::{get_preference, set_preference};
 pub use secrets::{
     create_secret_ref, delete_secret_ref, is_vault_unlocked, list_secret_refs, lock_vault,
     unlock_vault, update_secret_ref,

@@ -1,14 +1,20 @@
 # Database Architecture
 
-SSLBoard uses three separate SQLite databases to organize different types of data with clear separation of concerns. This document describes each database, its tables, schemas, and relationships.
+SSLBoard uses four separate SQLite databases to organize different types of data with clear separation of concerns. This document describes each database, its tables, schemas, and relationships.
 
 ## Overview
 
-The application stores data in three SQLite databases located in the app data directory:
+The application stores data in four SQLite databases located in the app data directory:
 
 - **macOS**: `~/Library/Application Support/com.sslboard.desktop/`
 - **Windows**: `%APPDATA%\com.sslboard.desktop\`
 - **Linux**: `~/.local/share/com.sslboard.desktop/`
+
+Databases:
+- `inventory.sqlite` (certificate inventory metadata)
+- `issuance.sqlite` (issuers and DNS challenge settings)
+- `preferences.sqlite` (user UI preferences)
+- `secrets.sqlite` (secret metadata and ciphertext)
 
 ## Database: `inventory.sqlite`
 
@@ -88,6 +94,26 @@ Maps hostname patterns to DNS zones and their authentication credentials for DNS
 - DNS-01 challenge configuration
 - Certificate authority selection
 - Automated certificate renewal
+
+## Database: `preferences.sqlite`
+
+**Purpose**: Stores user preferences that should persist across sessions (UI settings, last-used destinations).
+
+**Location**: `{app_data_dir}/preferences.sqlite`
+
+### Table: `preferences`
+
+Key-value store for non-secret user preferences.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `name` | TEXT | PRIMARY KEY | Preference name (unique key) |
+| `value` | TEXT | NOT NULL | Preference value |
+| `updated_at` | TEXT | NOT NULL | Last update timestamp (ISO 8601 datetime) |
+
+**Usage**:
+- Persisting export destination
+- Future UI defaults and preferences
 
 ## Database: `secrets.sqlite`
 
