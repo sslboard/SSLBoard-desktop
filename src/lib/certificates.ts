@@ -18,6 +18,34 @@ export type CertificateRecord = {
   chain_pem?: string | null;
 };
 
+export type ExportBundle = "cert" | "chain" | "fullchain";
+
+export type ExportCertificateRequest = {
+  certificateId: string;
+  destinationDir: string;
+  folderName: string;
+  includePrivateKey: boolean;
+  bundle: ExportBundle;
+  overwrite: boolean;
+};
+
+export type ExportedFile = {
+  label: string;
+  path: string;
+};
+
+export type ExportCertificateResponse =
+  | {
+      status: "success";
+      output_dir: string;
+      files: ExportedFile[];
+    }
+  | {
+      status: "overwrite_required";
+      output_dir: string;
+      existing_files: string[];
+    };
+
 export async function listCertificates(): Promise<CertificateRecord[]> {
   return invoke<CertificateRecord[]>("list_certificates");
 }
@@ -30,4 +58,19 @@ export async function getCertificate(
 
 export async function seedFakeCertificate(): Promise<void> {
   return invoke("seed_fake_certificate");
+}
+
+export async function exportCertificatePem(
+  exportReq: ExportCertificateRequest,
+): Promise<ExportCertificateResponse> {
+  return invoke<ExportCertificateResponse>("export_certificate_pem", {
+    exportReq: {
+      certificate_id: exportReq.certificateId,
+      destination_dir: exportReq.destinationDir,
+      folder_name: exportReq.folderName,
+      include_private_key: exportReq.includePrivateKey,
+      bundle: exportReq.bundle,
+      overwrite: exportReq.overwrite,
+    },
+  });
 }

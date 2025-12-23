@@ -35,3 +35,9 @@ export function certificateStatus(record: CertificateRecord) {
     tone: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40",
   };
 }
+
+export function exportFolderDefault(record: CertificateRecord) {
+  const primary = record.sans[0] ?? record.subjects[0] ?? record.domain_roots[0] ?? "certificate";
+  const suffix = record.sans.length > 1 ? `+${record.sans.length - 1}` : "";
+  return `${primary}${suffix}`;
+}

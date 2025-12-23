@@ -48,6 +48,46 @@ pub struct CertificateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportBundle {
+    Cert,
+    Chain,
+    Fullchain,
+}
+
+impl ExportBundle {
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportCertificateRequest {
+    pub certificate_id: String,
+    pub destination_dir: String,
+    pub folder_name: String,
+    pub include_private_key: bool,
+    pub bundle: ExportBundle,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportedFile {
+    pub label: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ExportCertificateResponse {
+    Success {
+        output_dir: String,
+        files: Vec<ExportedFile>,
+    },
+    OverwriteRequired {
+        output_dir: String,
+        existing_files: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSecretRequest {
     pub label: String,
     pub kind: SecretKind,
