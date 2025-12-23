@@ -54,9 +54,9 @@ export function IssuePage() {
     issuerEnvironment === "production" ? "production" : "sandbox";
   const issuerReady = Boolean(
     selectedIssuer &&
-      selectedIssuer.contact_email &&
-      selectedIssuer.account_key_ref &&
-      selectedIssuer.tos_agreed,
+    selectedIssuer.contact_email &&
+    selectedIssuer.account_key_ref &&
+    selectedIssuer.tos_agreed,
   );
 
   function handleSelectIssuer(issuerId: string) {
@@ -333,7 +333,7 @@ export function IssuePage() {
                 <Button variant="secondary" onClick={() => void checkAll()} disabled={checking}>
                   {checking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {hasManual
-                    ? "I&apos;ve added the TXT records — check propagation"
+                    ? "I've added the TXT records — check propagation"
                     : "Check DNS propagation"}
                 </Button>
                 <Button onClick={() => void finalizeIssuance()} disabled={!allFound || finalizing}>

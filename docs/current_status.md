@@ -1,20 +1,54 @@
 # Current Status (Desktop)
 
-- Secret storage abstraction implemented in Rust with OS keyring backing (`src-tauri/src/secrets/*`); prefixed refs (`sec_`), non-secret metadata persisted in SQLite, and Tauri commands for list/create/update/delete wired into the app.
-- Settings → Secrets UI added (`src/pages/Settings.tsx`) to list refs and handle add/replace/remove flows; UI only sends secret bytes into Rust once and operates on metadata afterward.
-- OpenSpec change `add-secret-store-abstraction` validated with all tasks checked; spec reflects prefixed refs, fail-fast on missing OS store, metadata in DB, and replace-with-same-ref semantics.
-- `cargo fmt` + `cargo check` pass; current warnings are expected unused helpers (`resolve_secret`, `SecretStore::retrieve`, `InventoryStore::insert_certificate`) pending integration with issuance/DNS flows.
-- Inventory foundations are in place (`src-tauri/src/storage/inventory.rs` + Tauri commands) with a Certificates page that lists metadata only; a demo seed record is inserted in debug builds and via `seed_fake_certificate`.
-- Issuance/DNS flows are partially in place: DNS-01 manual adapter + propagation polling implemented (ureq DoH lookup every 2s, 90s budget) with UI stepper on `Issue` page; OpenSpec change `add-dns-challenge-engine-manual-adapter` tasks are complete; ACME issuer sandbox change still pending.
-- DNS provider configuration is implemented end-to-end: new `dns_providers` storage model + migration from `dns_zone_mappings`, CRUD/resolve/test Tauri commands, and a dedicated Settings -> DNS Providers page with overlap warnings and inline delete confirmation. Provider resolution now shows a preview in the Issue flow and falls back to manual DNS when no provider matches.
-- Secret kind `dns_credential` has been replaced with `dns_provider_token` (migration included), and the Settings secrets UI no longer offers standalone DNS credential creation.
-- Test connection flow is wired (create -> propagate -> cleanup) but provider adapters are currently stubbed, so tests will return an error until real provider integrations are added.
-- Recent fixes: DNS provider store deadlock fixed (no nested mutex lock during create/update/delete), sidebar active state for Settings vs DNS Providers fixed, and delete confirmation UX adjusted in the DNS Providers list.
-- New OpenSpec change `add-issue-certificate-flow` drafted for step 5 (wizard, key-gen vs CSR import, DNS-01 gating, Managed persistence).
-- Key dependencies added: `uuid` (prefixed ref ids) and `keyring` (OS store). Secrets DB lives at `app_data_dir()/secrets.sqlite`; key material stays in OS keychain (fail fast if unavailable, no file fallback).
-- Placeholders / pending items:
-  - Certificates list can seed a fake record via UI and `seed_fake_certificate`; real issuance not wired yet.
-  - Discover page is still placeholder content.
-  - Unused helper warnings remain until issuance/DNS call sites use `resolve_secret`, `SecretStore::retrieve`, and `insert_certificate`.
-- ACME issuer scaffolding added: issuer store (`issuance.sqlite`) with staging/prod rows, Tauri commands to list/select issuers and ensure an ACME account, UI issuer settings with sandbox banner, contact email, and account key generate/import flows; secret kind validation guards prevent mixing DNS and ACME refs. Deadlock in issuer store fixed; account key auto-regenerates if missing.
-- Next logical work: implement `add-issue-certificate-flow` (ACME order orchestration, key-gen/CSR paths, Managed certificate persistence), wire actual ACME registration/order flows, hook `resolve_secret` into DNS/ACME adapters, persist/use secret refs in provider configs (beyond manual adapter defaults), flesh out issuer + DNS adapters, and optionally quiet unused warnings once call sites exist.
+## Recently Completed Changes (Archived)
+
+- **UI Shell with Shadcn** (`2025-12-17-add-ui-shell-shadcn`): Complete UI shell implementation with routing, sidebar navigation, and Shadcn component library integration.
+- **Secret Store Abstraction** (`2025-12-22-add-secret-store-abstraction`): OS keyring-backed secret storage with prefixed refs (`sec_`), metadata in SQLite, Tauri commands wired into Settings → Secrets UI.
+- **Certificate Inventory Foundations** (`2025-12-22-add-certificate-inventory-foundations`): Inventory storage and UI with metadata-only listing, demo seed record support.
+- **DNS Challenge Engine (Manual Adapter)** (`2025-12-22-add-dns-challenge-engine-manual-adapter`): DNS-01 manual adapter with propagation polling (ureq DoH lookup every 2s, 90s budget) and UI stepper on Issue page.
+- **DNS Provider Adapters** (`2025-12-22-add-dns-provider-adapters`): Initial DNS provider adapter framework (currently stubbed implementations).
+- **DNS Provider Configuration** (`2025-12-22-add-dns-provider-configuration`): End-to-end DNS provider management with new `dns_providers` storage, CRUD operations, test connection flow, and Settings page with overlap warnings.
+- **Issue Certificate Flow** (`2025-12-22-add-issue-certificate-flow`): ACME issuance orchestration, managed-key path (RSA-2048), CSR generation, DNS-01 challenges, and Managed certificate persistence.
+- **Issuer Management** (`2025-12-22-add-issuer-management`): ACME issuer store with Let's Encrypt staging/production, account key management, and UI settings integration.
+- **ACME Issuer Sandbox** (`2025-12-22-add-acme-issuer-sandbox`): ACME account registration and order creation scaffolding.
+- **Secrets Master Key Encryption Refactor** (`2025-12-22-refactor-secrets-master-key-encryption`): Master key encryption improvements.
+
+## Active OpenSpec Changes
+
+- **Certificate Renewal Flow** (`add-certificate-renewal-flow`): Not started - key reuse support, renewal lineage tracking, and UI integration for certificate renewals.
+- **DNS Provider Integration Tests** (`add-dns-provider-integration-tests`): Partially complete - Cloudflare and DigitalOcean integration tests implemented, Route 53 tests and CI/documentation pending.
+- **macOS Biometric Keychain** (`add-macos-biometric-keychain`): Not started - biometric access control for macOS using Touch ID/Face ID.
+- **Rust Code Quality Refactoring** (`refactor-rust-code-quality`): **Fully Complete** - DNS provider code modularized, error handling improved, logging standardized, dead code removed, and performance/security enhancements implemented.
+- **DNS Provider TXT Upsert Updates** (`update-dns-provider-txt-upsert`): Mostly complete - TXT content normalization and upsert behavior implemented for DigitalOcean/Route 53, validation pending.
+
+## Current System State
+
+- Secret storage: OS keyring-backed with metadata in `secrets.sqlite`; prefixed refs (`sec_`), secret kind `dns_provider_token` replaces `dns_credential`.
+- Certificate inventory: Functional with metadata listing and demo seeding; real issuance flow implemented with ACME orchestration.
+- DNS providers: Full CRUD management with test connection flow; provider resolution integrated into Issue flow with manual fallback.
+- Issuance: End-to-end ACME flow with managed keys, DNS-01 challenges, and certificate persistence; staging/production issuer support.
+- UI: Complete shell with routing, all major pages functional (Certificates, Issue, Settings with DNS Providers/Issuers/Secrets).
+- Code quality: Recent refactoring completed - DNS modules split, error handling standardized, logging implemented, unused code cleaned up.
+
+## Dependencies & Infrastructure
+
+- Key dependencies: `uuid`, `keyring`, `tracing` (logging), `security_framework` (macOS biometric - pending).
+- Databases: `secrets.sqlite` (secret metadata), `issuance.sqlite` (issuers), inventory in main DB.
+- Build: `cargo fmt` + `cargo check` pass; no current compilation warnings.
+
+## Pending/Placeholder Items
+
+- Discover page: Still placeholder content.
+- Certificate renewal: Not yet implemented (key reuse, lineage tracking, UI integration).
+- DNS provider adapters: Currently stubbed - need real Cloudflare/DigitalOcean/Route 53 implementations.
+- Integration tests: Route 53 tests and CI setup pending.
+- macOS biometric features: Not yet implemented.
+- ACME account key validation: May need additional error handling refinements.
+
+## Next Logical Work
+
+- Complete `add-dns-provider-integration-tests` (Route 53 tests, documentation, CI).
+- Implement real DNS provider adapters (Cloudflare, DigitalOcean, Route 53).
+- Add certificate renewal flow with key reuse and lineage tracking.
+- Consider macOS biometric keychain enhancement.
+- Flesh out ACME error handling and account key validation.

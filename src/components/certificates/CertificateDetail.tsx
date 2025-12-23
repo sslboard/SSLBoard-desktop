@@ -50,7 +50,7 @@ export function CertificateDetail({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <DetailItem label="Issuer" value={selected.issuer} />
-            <DetailItem label="Serial" value={selected.serial} />
+            <DetailItem label="Serial" value={selected.serial} truncate={true} />
             <DetailItem
               label="Validity"
               value={`${formatCertificateDate(selected.not_before)} – ${formatCertificateDate(selected.not_after)}`}
