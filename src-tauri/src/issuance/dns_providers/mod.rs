@@ -4,6 +4,7 @@ use crate::{secrets::manager::SecretManager, storage::dns::DnsProvider};
 
 mod cloudflare;
 mod digitalocean;
+pub(crate) mod http;
 mod route53;
 
 pub use cloudflare::CloudflareAdapter;

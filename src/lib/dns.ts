@@ -30,7 +30,9 @@ export type PropagationResult = {
 export async function prepareDnsChallenge(
   req: PrepareDnsChallengeRequest,
 ): Promise<PreparedDnsChallenge> {
-  return invoke<PreparedDnsChallenge>("prepare_dns_challenge", { req });
+  return invoke<PreparedDnsChallenge>("prepare_dns_challenge", {
+    prepareReq: req,
+  });
 }
 
 export async function checkDnsPropagation(
@@ -38,6 +40,6 @@ export async function checkDnsPropagation(
   txtValue: string,
 ): Promise<PropagationResult> {
   return invoke<PropagationResult>("check_dns_propagation", {
-    req: { domain, txt_value: txtValue },
+    checkReq: { domain, txt_value: txtValue },
   });
 }

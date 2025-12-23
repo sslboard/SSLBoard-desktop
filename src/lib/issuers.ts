@@ -42,23 +42,25 @@ export async function listIssuers(): Promise<IssuerConfig[]> {
 }
 
 export async function selectIssuer(issuerId: string): Promise<IssuerConfig> {
-  return invoke<IssuerConfig>("select_issuer", { req: { issuer_id: issuerId } });
+  return invoke<IssuerConfig>("select_issuer", {
+    selectReq: { issuer_id: issuerId },
+  });
 }
 
 export async function createIssuer(
   req: CreateIssuerRequest,
 ): Promise<IssuerConfig> {
-  return invoke<IssuerConfig>("create_issuer", { req });
+  return invoke<IssuerConfig>("create_issuer", { createReq: req });
 }
 
 export async function updateIssuer(
   req: UpdateIssuerRequest,
 ): Promise<IssuerConfig> {
-  return invoke<IssuerConfig>("update_issuer", { req });
+  return invoke<IssuerConfig>("update_issuer", { updateReq: req });
 }
 
 export async function deleteIssuer(
   req: DeleteIssuerRequest,
 ): Promise<string> {
-  return invoke<string>("delete_issuer", { req });
+  return invoke<string>("delete_issuer", { deleteReq: req });
 }

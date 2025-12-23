@@ -138,7 +138,7 @@ impl SecretMetadataStore {
                         | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
                 ) == 0
                 {
-                    eprintln!(
+                    log::warn!(
                         "[secrets] warning: failed to harden Windows file attributes for {}: {}",
                         db_path.display(),
                         std::io::Error::last_os_error()

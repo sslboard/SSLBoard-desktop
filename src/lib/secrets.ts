@@ -33,13 +33,13 @@ export async function listSecretRefs(): Promise<SecretRefRecord[]> {
 export async function createSecretRef(
   req: CreateSecretRequest,
 ): Promise<SecretRefRecord> {
-  return invoke<SecretRefRecord>("create_secret_ref", { req });
+  return invoke<SecretRefRecord>("create_secret_ref", { createReq: req });
 }
 
 export async function updateSecretRef(
   req: UpdateSecretRequest,
 ): Promise<SecretRefRecord> {
-  return invoke<SecretRefRecord>("update_secret_ref", { req });
+  return invoke<SecretRefRecord>("update_secret_ref", { updateReq: req });
 }
 
 export async function deleteSecretRef(id: string): Promise<void> {

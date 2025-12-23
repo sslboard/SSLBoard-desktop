@@ -10,22 +10,22 @@ use crate::storage::dns::{DnsConfigStore, DnsProvider};
 #[tauri::command]
 pub async fn prepare_dns_challenge(
     store: State<'_, DnsConfigStore>,
-    req: PrepareDnsChallengeRequest,
+    prepare_req: PrepareDnsChallengeRequest,
 ) -> Result<PreparedDnsChallenge, String> {
     let store = store.inner().clone();
     spawn_blocking(move || -> Result<PreparedDnsChallenge, anyhow::Error> {
-        let adapter = ManualDnsAdapter::new();
-        let resolution = store.resolve_provider_for_domain(&req.domain)?;
+        let dns_adapter = ManualDnsAdapter::new();
+        let resolution = store.resolve_provider_for_domain(&prepare_req.domain)?;
         let zone_override = resolution
             .provider
             .as_ref()
             .and_then(provider_zone_override);
         let challenge = DnsChallengeRequest {
-            domain: req.domain.clone(),
-            value: req.txt_value.clone(),
+            domain: prepare_req.domain.clone(),
+            value: prepare_req.txt_value.clone(),
             zone: zone_override,
         };
-        let record = adapter.present_txt(&challenge)?;
+        let record = dns_adapter.present_txt(&challenge)?;
         Ok(PreparedDnsChallenge { record })
     })
     .await
@@ -36,16 +36,16 @@ pub async fn prepare_dns_challenge(
 /// Checks TXT record propagation for a DNS-01 challenge.
 #[tauri::command]
 pub async fn check_dns_propagation(
-    req: CheckPropagationRequest,
+    check_req: CheckPropagationRequest,
 ) -> Result<PropagationDto, String> {
     spawn_blocking(move || -> Result<PropagationDto, anyhow::Error> {
-        let adapter = ManualDnsAdapter::new();
+        let dns_adapter = ManualDnsAdapter::new();
         let challenge = DnsChallengeRequest {
-            domain: req.domain.clone(),
-            value: req.txt_value.clone(),
+            domain: check_req.domain.clone(),
+            value: check_req.txt_value.clone(),
             zone: None,
         };
-        let result = adapter.check_propagation(&challenge)?;
+        let result = dns_adapter.check_propagation(&challenge)?;
         Ok(result)
     })
     .await

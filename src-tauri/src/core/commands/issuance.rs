@@ -13,18 +13,23 @@ pub async fn start_managed_issuance(
     issuer_store: State<'_, IssuerConfigStore>,
     dns_store: State<'_, DnsConfigStore>,
     secrets: State<'_, SecretManager>,
-    req: StartIssuanceRequest,
+    start_req: StartIssuanceRequest,
 ) -> Result<StartIssuanceResponse, String> {
     let issuer_store = issuer_store.inner().clone();
     let dns_store = dns_store.inner().clone();
     let secrets = secrets.inner().clone();
     spawn_blocking(move || {
-        start_managed_dns01(req.domains, req.issuer_id, &issuer_store, &dns_store, &secrets).map(
-            |(request_id, dns_records)| StartIssuanceResponse {
-                request_id,
-                dns_records,
-            },
+        start_managed_dns01(
+            start_req.domains,
+            start_req.issuer_id,
+            &issuer_store,
+            &dns_store,
+            &secrets,
         )
+        .map(|(request_id, dns_records)| StartIssuanceResponse {
+            request_id,
+            dns_records,
+        })
     })
     .await
     .map_err(|err| format!("Start issuance join error: {err}"))?
@@ -36,11 +41,13 @@ pub async fn start_managed_issuance(
 pub async fn complete_managed_issuance(
     inventory: State<'_, InventoryStore>,
     secrets: State<'_, SecretManager>,
-    req: CompleteIssuanceRequest,
+    complete_req: CompleteIssuanceRequest,
 ) -> Result<CertificateRecord, String> {
     let inventory = inventory.inner().clone();
     let secrets = secrets.inner().clone();
-    spawn_blocking(move || complete_managed_dns01(&req.request_id, &inventory, &secrets))
+    spawn_blocking(move || {
+        complete_managed_dns01(&complete_req.request_id, &inventory, &secrets)
+    })
         .await
         .map_err(|err| format!("Complete issuance join error: {err}"))?
         .map_err(|err: anyhow::Error| err.to_string())

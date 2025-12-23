@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{matches_zone, DnsProviderAdapter};
+use super::{http, matches_zone, DnsProviderAdapter};
 
 pub struct CloudflareAdapter {
     api_token: String,
@@ -74,7 +74,7 @@ impl CloudflareAdapter {
             return Ok(zone_id.clone());
         }
 
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let response = client
             .get("https://api.cloudflare.com/client/v4/zones")
             .header("Authorization", format!("Bearer {}", self.api_token))
@@ -84,12 +84,11 @@ impl CloudflareAdapter {
 
         if !response.status().is_success() {
             if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("Cloudflare authentication failed: invalid API token"));
+                return Err(anyhow!(
+                    "Cloudflare authentication failed: invalid API token"
+                ));
             }
-            return Err(anyhow!(
-                "Cloudflare API error: {}",
-                response.status()
-            ));
+            return Err(http::status_error("Cloudflare", response.status(), None));
         }
 
         let zone_list: CloudflareZoneListResponse = response
@@ -118,7 +117,7 @@ impl CloudflareAdapter {
 
     fn create_txt_record(&mut self, record_name: &str, value: &str) -> Result<String> {
         let zone_id = self.discover_zone_id()?;
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let formatted_value = Self::format_txt_content(value);
 
         let record = CloudflareDnsRecord {
@@ -140,12 +139,7 @@ impl CloudflareAdapter {
             .context("Failed to create Cloudflare DNS record")?;
 
         if !response.status().is_success() {
-            if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("Cloudflare authentication failed"));
-            }
-            if response.status() == 429 {
-                return Err(anyhow!("Cloudflare rate limit exceeded"));
-            }
+            let status = response.status();
             let error_text = response.text().unwrap_or_default();
             if let Ok(parsed) = serde_json::from_str::<CloudflareDnsRecordResponse>(&error_text) {
                 if parsed
@@ -157,7 +151,11 @@ impl CloudflareAdapter {
                     return self.update_existing_txt_record(&client, &zone_id, record_name, value);
                 }
             }
-            return Err(anyhow!("Cloudflare API error: {}", error_text));
+            return Err(http::status_error(
+                "Cloudflare",
+                status,
+                Some(error_text.clone()),
+            ));
         }
 
         let result: CloudflareDnsRecordResponse = response
@@ -257,8 +255,9 @@ impl CloudflareAdapter {
                 .context("Failed to update Cloudflare DNS record")?;
 
             if !update_response.status().is_success() {
+                let status = update_response.status();
                 let error_text = update_response.text().unwrap_or_default();
-                return Err(anyhow!("Cloudflare API error: {}", error_text));
+                return Err(http::status_error("Cloudflare", status, Some(error_text)));
             }
 
             let result: CloudflareDnsRecordResponse = update_response
@@ -296,7 +295,7 @@ impl CloudflareAdapter {
 
     fn delete_txt_record(&mut self, record_name: &str) -> Result<()> {
         let zone_id = self.discover_zone_id()?;
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
 
         // First, find the record ID
         let response = client
@@ -345,9 +344,10 @@ impl CloudflareAdapter {
             .context("Failed to delete Cloudflare DNS record")?;
 
         if !delete_response.status().is_success() {
-            return Err(anyhow!(
-                "Failed to delete Cloudflare DNS record: {}",
-                delete_response.status()
+            return Err(http::status_error(
+                "Cloudflare",
+                delete_response.status(),
+                None,
             ));
         }
 
@@ -396,13 +396,15 @@ impl CloudflareAdapter {
 impl DnsProviderAdapter for CloudflareAdapter {
     fn create_txt(&self, record_name: &str, value: &str) -> Result<()> {
         // Need mutable access, so clone and create new adapter
-        let mut adapter = CloudflareAdapter::new(self.api_token.clone(), self.domain_suffix.clone());
+        let mut adapter =
+            CloudflareAdapter::new(self.api_token.clone(), self.domain_suffix.clone());
         adapter.create_txt_record(record_name, value)?;
         Ok(())
     }
 
     fn cleanup_txt(&self, record_name: &str) -> Result<()> {
-        let mut adapter = CloudflareAdapter::new(self.api_token.clone(), self.domain_suffix.clone());
+        let mut adapter =
+            CloudflareAdapter::new(self.api_token.clone(), self.domain_suffix.clone());
         adapter.delete_txt_record(record_name)?;
         Ok(())
     }

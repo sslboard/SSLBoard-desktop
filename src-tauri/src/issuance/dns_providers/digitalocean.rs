@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::DnsProviderAdapter;
+use super::{http, DnsProviderAdapter};
 
 pub struct DigitalOceanAdapter {
     api_token: String,
@@ -30,7 +30,6 @@ struct DigitalOceanDnsRecordResult {
 
 #[derive(Deserialize)]
 struct DigitalOceanDnsRecordDetail {
-    id: u64,
     #[serde(default)]
     data: Option<String>,
 }
@@ -79,7 +78,7 @@ impl DigitalOceanAdapter {
 
     fn list_txt_records(&self, record_name: &str) -> Result<Vec<DigitalOceanDnsRecordListItem>> {
         let relative_name = self.to_relative_name(record_name);
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let response = client
             .get(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records?type=TXT&name={}",
@@ -90,13 +89,9 @@ impl DigitalOceanAdapter {
             .context("Failed to list DigitalOcean DNS records")?;
 
         if !response.status().is_success() {
-            if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("DigitalOcean authentication failed"));
-            }
-            if response.status() == 429 {
-                return Err(anyhow!("DigitalOcean rate limit exceeded"));
-            }
-            return Err(anyhow!("DigitalOcean API error: {}", response.status()));
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(http::status_error("DigitalOcean", status, Some(body)));
         }
 
         let list_result: DigitalOceanDnsRecordListResponse = response
@@ -107,7 +102,7 @@ impl DigitalOceanAdapter {
     }
 
     fn list_all_txt_records(&self) -> Result<Vec<DigitalOceanDnsRecordListItem>> {
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let response = client
             .get(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records?type=TXT",
@@ -118,13 +113,9 @@ impl DigitalOceanAdapter {
             .context("Failed to list DigitalOcean DNS records")?;
 
         if !response.status().is_success() {
-            if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("DigitalOcean authentication failed"));
-            }
-            if response.status() == 429 {
-                return Err(anyhow!("DigitalOcean rate limit exceeded"));
-            }
-            return Err(anyhow!("DigitalOcean API error: {}", response.status()));
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(http::status_error("DigitalOcean", status, Some(body)));
         }
 
         let list_result: DigitalOceanDnsRecordListResponse = response
@@ -135,7 +126,7 @@ impl DigitalOceanAdapter {
     }
 
     fn create_txt_record(&self, record_name: &str, value: &str) -> Result<u64> {
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let relative_name = self.to_relative_name(record_name);
 
         let record = DigitalOceanDnsRecord {
@@ -157,14 +148,9 @@ impl DigitalOceanAdapter {
             .context("Failed to create DigitalOcean DNS record")?;
 
         if !response.status().is_success() {
-            if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("DigitalOcean authentication failed"));
-            }
-            if response.status() == 429 {
-                return Err(anyhow!("DigitalOcean rate limit exceeded"));
-            }
+            let status = response.status();
             let error_text = response.text().unwrap_or_default();
-            return Err(anyhow!("DigitalOcean API error: {}", error_text));
+            return Err(http::status_error("DigitalOcean", status, Some(error_text)));
         }
 
         let result: DigitalOceanDnsRecordResponse = response
@@ -175,7 +161,7 @@ impl DigitalOceanAdapter {
     }
 
     fn update_txt_record(&self, record_id: u64, record_name: &str, value: &str) -> Result<()> {
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let relative_name = self.to_relative_name(record_name);
         let record = DigitalOceanDnsRecord {
             record_type: "TXT".to_string(),
@@ -195,21 +181,16 @@ impl DigitalOceanAdapter {
             .context("Failed to update DigitalOcean DNS record")?;
 
         if !response.status().is_success() {
-            if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("DigitalOcean authentication failed"));
-            }
-            if response.status() == 429 {
-                return Err(anyhow!("DigitalOcean rate limit exceeded"));
-            }
+            let status = response.status();
             let error_text = response.text().unwrap_or_default();
-            return Err(anyhow!("DigitalOcean API error: {}", error_text));
+            return Err(http::status_error("DigitalOcean", status, Some(error_text)));
         }
 
         Ok(())
     }
 
     fn fetch_record_data(&self, record_id: u64) -> Result<Option<String>> {
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
         let response = client
             .get(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records/{}",
@@ -223,14 +204,9 @@ impl DigitalOceanAdapter {
             return Ok(None);
         }
         if !response.status().is_success() {
-            if response.status() == 401 || response.status() == 403 {
-                return Err(anyhow!("DigitalOcean authentication failed"));
-            }
-            if response.status() == 429 {
-                return Err(anyhow!("DigitalOcean rate limit exceeded"));
-            }
+            let status = response.status();
             let error_text = response.text().unwrap_or_default();
-            return Err(anyhow!("DigitalOcean API error: {}", error_text));
+            return Err(http::status_error("DigitalOcean", status, Some(error_text)));
         }
 
         let record: DigitalOceanDnsRecordDetailResponse = response
@@ -277,7 +253,7 @@ impl DigitalOceanAdapter {
     }
 
     fn delete_txt_record(&self, record_name: &str) -> Result<()> {
-        let client = reqwest::blocking::Client::new();
+        let client = http::HttpClient::shared();
 
         let relative_name = self.to_relative_name(record_name);
         let mut record_ids: Vec<u64> = Vec::new();
@@ -318,9 +294,10 @@ impl DigitalOceanAdapter {
                 if delete_response.status() == 404 {
                     continue;
                 }
-                return Err(anyhow!(
-                    "Failed to delete DigitalOcean DNS record: {}",
-                    delete_response.status()
+                return Err(http::status_error(
+                    "DigitalOcean",
+                    delete_response.status(),
+                    None,
                 ));
             }
         }
@@ -339,8 +316,6 @@ struct DigitalOceanDnsRecordListItem {
     id: u64,
     #[serde(default)]
     name: String,
-    #[serde(default)]
-    data: Option<String>,
 }
 
 impl DnsProviderAdapter for DigitalOceanAdapter {

@@ -23,11 +23,15 @@ export type CompleteIssuanceRequest = {
 export async function startManagedIssuance(
   req: StartIssuanceRequest,
 ): Promise<StartIssuanceResponse> {
-  return invoke<StartIssuanceResponse>("start_managed_issuance", { req });
+  return invoke<StartIssuanceResponse>("start_managed_issuance", {
+    startReq: req,
+  });
 }
 
 export async function completeManagedIssuance(
   req: CompleteIssuanceRequest,
 ): Promise<CertificateRecord> {
-  return invoke<CertificateRecord>("complete_managed_issuance", { req });
+  return invoke<CertificateRecord>("complete_managed_issuance", {
+    completeReq: req,
+  });
 }

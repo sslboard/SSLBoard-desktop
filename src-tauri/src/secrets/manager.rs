@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
+use log::{error, info, warn};
 use uuid::Uuid;
 
 use super::{
@@ -96,11 +97,10 @@ impl SecretManager {
             label,
             created_at: Utc::now(),
         };
-        eprintln!(
-            "[secrets] create_secret kind={} id={} label={}",
+        info!(
+            "[secrets] create_secret kind={} id={}",
             record.kind.as_str(),
-            record.id,
-            record.label
+            record.id
         );
 
         self.metadata
@@ -226,7 +226,7 @@ impl SecretManager {
             return Ok(());
         }
 
-        eprintln!("[secrets] migrating legacy keyring secrets into encrypted store");
+        info!("[secrets] migrating legacy keyring secrets into encrypted store");
 
         let migration = || -> Result<()> {
             self.vault.unlock()?;
@@ -240,14 +240,14 @@ impl SecretManager {
                         let secret = Zeroizing::new(bytes);
                         self.store_secret(&record.id, &secret)?;
                         if let Err(err) = self.legacy_store.delete(&record.id) {
-                            eprintln!(
+                            warn!(
                                 "[secrets] warning: failed to delete legacy keyring entry {}: {}",
                                 record.id, err
                             );
                         }
                     }
                     Err(SecretStoreError::NotFound(_)) => {
-                        eprintln!(
+                        warn!(
                             "[secrets] removing orphaned metadata row without keyring entry: {}",
                             record.id
                         );
@@ -283,7 +283,7 @@ impl SecretManager {
     fn emit_vault_state(&self, unlocked: bool) {
         let payload = serde_json::json!({ "unlocked": unlocked });
         if let Err(err) = self.app.emit("vault-state-changed", payload) {
-            eprintln!("[secrets] failed to emit vault state: {err}");
+            error!("[secrets] failed to emit vault state: {err}");
         }
     }
 }

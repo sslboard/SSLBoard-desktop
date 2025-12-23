@@ -1,4 +1,5 @@
 use tauri::{async_runtime::spawn_blocking, State};
+use log::debug;
 
 use crate::core::types::{
     CreateIssuerRequest, DeleteIssuerRequest, IssuerConfigDto, IssuerEnvironment, IssuerType,
@@ -16,13 +17,13 @@ use crate::storage::issuer::IssuerConfigStore;
 pub async fn list_issuers(
     store: State<'_, IssuerConfigStore>,
 ) -> Result<Vec<IssuerConfigDto>, String> {
-    eprintln!("[list_issuers] start");
+    debug!("[list_issuers] start");
     let store = store.inner().clone();
     spawn_blocking(move || -> Result<Vec<IssuerConfigDto>, anyhow::Error> {
-        eprintln!("[list_issuers] querying store");
+        debug!("[list_issuers] querying store");
         let records = store.list()?;
         let result: Vec<IssuerConfigDto> = records.into_iter().map(issuer_record_to_dto).collect();
-        eprintln!("[list_issuers] returning {} issuers", result.len());
+        debug!("[list_issuers] returning {} issuers", result.len());
         Ok(result)
     })
     .await
@@ -34,11 +35,11 @@ pub async fn list_issuers(
 #[tauri::command]
 pub async fn select_issuer(
     store: State<'_, IssuerConfigStore>,
-    req: SelectIssuerRequest,
+    select_req: SelectIssuerRequest,
 ) -> Result<IssuerConfigDto, String> {
     let store = store.inner().clone();
     spawn_blocking(move || {
-        let record = store.set_selected(&req.issuer_id)?;
+        let record = store.set_selected(&select_req.issuer_id)?;
         Ok(issuer_record_to_dto(record))
     })
     .await
@@ -51,20 +52,24 @@ pub async fn select_issuer(
 pub async fn create_issuer(
     store: State<'_, IssuerConfigStore>,
     secrets: State<'_, SecretManager>,
-    req: CreateIssuerRequest,
+    create_req: CreateIssuerRequest,
 ) -> Result<IssuerConfigDto, String> {
     let store = store.inner().clone();
     let secrets = secrets.inner().clone();
     spawn_blocking(move || {
-        if req.label.trim().is_empty() {
+        if create_req.label.trim().is_empty() {
             return Err(anyhow::anyhow!("issuer label is required"));
         }
-        validate_acme_requirements(&req.issuer_type, req.contact_email.as_ref(), req.tos_agreed)?;
-        if req.directory_url.trim().is_empty() {
+        validate_acme_requirements(
+            &create_req.issuer_type,
+            create_req.contact_email.as_ref(),
+            create_req.tos_agreed,
+        )?;
+        if create_req.directory_url.trim().is_empty() {
             return Err(anyhow::anyhow!("directory URL is required"));
         }
 
-        let account_key_ref = match req.issuer_type {
+        let account_key_ref = match create_req.issuer_type {
             IssuerType::Acme => {
                 let pem = generate_account_key_pem()
                     .map_err(|err| anyhow::anyhow!("failed to generate ACME account key: {err}"))?;
@@ -80,13 +85,13 @@ pub async fn create_issuer(
         };
 
         let record = store.create(
-            req.label,
-            issuer_type_to_string(&req.issuer_type),
-            environment_to_string(&req.environment),
-            req.directory_url,
-            req.contact_email,
+            create_req.label,
+            issuer_type_to_string(&create_req.issuer_type),
+            environment_to_string(&create_req.environment),
+            create_req.directory_url,
+            create_req.contact_email,
             account_key_ref,
-            req.tos_agreed,
+            create_req.tos_agreed,
         )?;
         Ok(issuer_record_to_dto(record))
     })
@@ -100,29 +105,33 @@ pub async fn create_issuer(
 pub async fn update_issuer(
     store: State<'_, IssuerConfigStore>,
     secrets: State<'_, SecretManager>,
-    req: UpdateIssuerRequest,
+    update_req: UpdateIssuerRequest,
 ) -> Result<IssuerConfigDto, String> {
     let store = store.inner().clone();
     let secrets = secrets.inner().clone();
     spawn_blocking(move || {
-        if req.label.trim().is_empty() {
+        if update_req.label.trim().is_empty() {
             return Err(anyhow::anyhow!("issuer label is required"));
         }
-        validate_acme_requirements(&IssuerType::Acme, req.contact_email.as_ref(), req.tos_agreed)?;
-        if req.directory_url.trim().is_empty() {
+        validate_acme_requirements(
+            &IssuerType::Acme,
+            update_req.contact_email.as_ref(),
+            update_req.tos_agreed,
+        )?;
+        if update_req.directory_url.trim().is_empty() {
             return Err(anyhow::anyhow!("directory URL is required"));
         }
 
         let existing = store
-            .get(&req.issuer_id)?
-            .ok_or_else(|| anyhow::anyhow!("issuer not found: {}", req.issuer_id))?;
+            .get(&update_req.issuer_id)?
+            .ok_or_else(|| anyhow::anyhow!("issuer not found: {}", update_req.issuer_id))?;
         let record = store.update(
-            &req.issuer_id,
-            req.label,
-            environment_to_string(&req.environment),
-            req.directory_url,
-            req.contact_email,
-            req.tos_agreed,
+            &update_req.issuer_id,
+            update_req.label,
+            environment_to_string(&update_req.environment),
+            update_req.directory_url,
+            update_req.contact_email,
+            update_req.tos_agreed,
         )?;
         let record = if existing.account_key_ref.is_none() {
             let pem = generate_account_key_pem()
@@ -134,7 +143,7 @@ pub async fn update_issuer(
                     pem,
                 )
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-            store.set_account_key_ref(&req.issuer_id, secret_record.id)?
+            store.set_account_key_ref(&update_req.issuer_id, secret_record.id)?
         } else {
             record
         };
@@ -150,14 +159,14 @@ pub async fn update_issuer(
 pub async fn delete_issuer(
     store: State<'_, IssuerConfigStore>,
     secrets: State<'_, SecretManager>,
-    req: DeleteIssuerRequest,
+    delete_req: DeleteIssuerRequest,
 ) -> Result<String, String> {
     let store = store.inner().clone();
     let secrets = secrets.inner().clone();
     spawn_blocking(move || {
         let record = store
-            .get(&req.issuer_id)?
-            .ok_or_else(|| anyhow::anyhow!("issuer not found: {}", req.issuer_id))?;
+            .get(&delete_req.issuer_id)?
+            .ok_or_else(|| anyhow::anyhow!("issuer not found: {}", delete_req.issuer_id))?;
         if let Some(account_key_ref) = record.account_key_ref {
             match secrets.delete_secret(&account_key_ref) {
                 Ok(()) => {}
@@ -165,8 +174,8 @@ pub async fn delete_issuer(
                 Err(err) => return Err(anyhow::anyhow!(err.to_string())),
             }
         }
-        store.delete(&req.issuer_id)?;
-        Ok(req.issuer_id)
+        store.delete(&delete_req.issuer_id)?;
+        Ok(delete_req.issuer_id)
     })
     .await
     .map_err(|err| format!("Delete issuer join error: {err}"))?

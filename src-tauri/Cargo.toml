@@ -69,6 +69,10 @@ aws-config = "1"
 thiserror = "1.0"
 anyhow = "1.0"
 
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
 # Time/date handling for certificate expiry, audit logs
 chrono = { version = "0.4", features = ["serde"] }
 

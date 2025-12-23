@@ -84,33 +84,35 @@ export async function listDnsProviders(): Promise<DnsProviderRecord[]> {
 export async function createDnsProvider(
   req: CreateDnsProviderRequest,
 ): Promise<DnsProviderRecord> {
-  return invoke("dns_provider_create", { req });
+  return invoke("dns_provider_create", { createReq: req });
 }
 
 export async function updateDnsProvider(
   req: UpdateDnsProviderRequest,
 ): Promise<DnsProviderRecord> {
-  return invoke("dns_provider_update", { req });
+  return invoke("dns_provider_update", { updateReq: req });
 }
 
 export async function deleteDnsProvider(providerId: string): Promise<string> {
-  return invoke("dns_provider_delete", { req: { provider_id: providerId } });
+  return invoke("dns_provider_delete", {
+    deleteReq: { provider_id: providerId },
+  });
 }
 
 export async function testDnsProvider(
   providerId: string,
 ): Promise<DnsProviderTestResult> {
-  return invoke("dns_provider_test", { req: { provider_id: providerId } });
+  return invoke("dns_provider_test", { testReq: { provider_id: providerId } });
 }
 
 export async function validateDnsProviderToken(
   req: ValidateDnsProviderTokenRequest,
 ): Promise<DnsProviderTokenValidationResult> {
-  return invoke("dns_provider_validate_token", { req });
+  return invoke("dns_provider_validate_token", { validateReq: req });
 }
 
 export async function resolveDnsProvider(
   hostname: string,
 ): Promise<DnsProviderResolution> {
-  return invoke("dns_resolve_provider", { req: { hostname } });
+  return invoke("dns_resolve_provider", { resolveReq: { hostname } });
 }

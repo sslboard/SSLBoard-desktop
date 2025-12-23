@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
+use log::{debug, warn};
 use rand::{rngs::OsRng, RngCore};
 use zeroize::Zeroizing;
 
@@ -64,31 +65,31 @@ impl MasterKeyStore {
     }
 
     pub fn get_or_create(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
-        eprintln!("[keyring] get_or_create called");
+        debug!("[keyring] get_or_create called");
         match self.get() {
             Ok(key) => {
-                eprintln!("[keyring] get_or_create: found existing key");
+                debug!("[keyring] get_or_create: found existing key");
                 Ok(key)
             }
             Err(SecretStoreError::NotFound(_)) => {
-                eprintln!("[keyring] get_or_create: no key found, creating new");
+                debug!("[keyring] get_or_create: no key found, creating new");
                 self.create()
             }
             Err(err) => {
-                eprintln!("[keyring] get_or_create: error={}", err);
+                warn!("[keyring] get_or_create: error={}", err);
                 Err(err)
             }
         }
     }
 
     pub fn get(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
-        eprintln!("[keyring] get: fetching master key from keyring...");
+        debug!("[keyring] get: fetching master key from keyring...");
         let entry =
             Entry::new(&self.service, &self.user).map_err(|err| map_error(&self.user, err))?;
         let value = entry
             .get_password()
             .map_err(|err| map_error(&self.user, err))?;
-        eprintln!("[keyring] get: keyring access complete");
+        debug!("[keyring] get: keyring access complete");
         let decoded = general_purpose::STANDARD
             .decode(value.as_bytes())
             .map_err(|err| {
@@ -98,18 +99,18 @@ impl MasterKeyStore {
     }
 
     pub fn create(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
-        eprintln!("[keyring] create: generating new master key...");
+        debug!("[keyring] create: generating new master key...");
         let mut key_bytes = vec![0u8; 32];
         OsRng.fill_bytes(&mut key_bytes);
         let encoded = general_purpose::STANDARD.encode(&key_bytes);
 
         let entry =
             Entry::new(&self.service, &self.user).map_err(|err| map_error(&self.user, err))?;
-        eprintln!("[keyring] create: storing key in keyring...");
+        debug!("[keyring] create: storing key in keyring...");
         entry
             .set_password(&encoded)
             .map_err(|err| map_error(&self.user, err))?;
-        eprintln!("[keyring] create: keyring access complete");
+        debug!("[keyring] create: keyring access complete");
 
         Ok(Zeroizing::new(key_bytes))
     }

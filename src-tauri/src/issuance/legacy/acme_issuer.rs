@@ -63,13 +63,13 @@ impl<'a> AcmeIssuer<'a> {
                     found: metadata.kind.as_str().into(),
                 });
             }
-            let _ = self.secrets.resolve_secret(&existing_ref)?;
+            self.secrets.resolve_secret(&existing_ref)?;
             existing_ref
         } else if let Some(existing_ref) = &self.config.account_key_ref {
             // Validate the persisted ref; if missing and allowed, generate a new one.
             match self.secrets.get_metadata(existing_ref)? {
                 Some(metadata) if metadata.kind == SecretKind::AcmeAccountKey => {
-                    let _ = self.secrets.resolve_secret(existing_ref)?;
+                    self.secrets.resolve_secret(existing_ref)?;
                     existing_ref.clone()
                 }
                 _ if generate_new_account_key => {
@@ -79,9 +79,8 @@ impl<'a> AcmeIssuer<'a> {
                         .secrets
                         .create_secret(SecretKind::AcmeAccountKey, "ACME account key".into(), pem)
                         .map_err(AcmeIssuerError::from)?;
-                    eprintln!(
-                        "[acme_issuer] regenerated account key ref {} (persisted ref missing/invalid)",
-                        record.id
+                    log::info!(
+                        "[acme_issuer] regenerated account key (persisted ref missing/invalid)"
                     );
                     record.id
                 }
@@ -99,10 +98,7 @@ impl<'a> AcmeIssuer<'a> {
                 .secrets
                 .create_secret(SecretKind::AcmeAccountKey, "ACME account key".into(), pem)
                 .map_err(AcmeIssuerError::from)?;
-            eprintln!(
-                "[acme_issuer] generated new account key ref {} (kind acme_account_key)",
-                record.id
-            );
+            log::info!("[acme_issuer] generated new account key (kind acme_account_key)");
             record.id
         } else {
             return Err(AcmeIssuerError::KeyGeneration(

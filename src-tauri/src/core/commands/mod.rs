@@ -1,4 +1,9 @@
 pub mod dns_challenge;
+mod dns_provider_creation;
+mod dns_provider_helpers;
+mod dns_provider_management;
+mod dns_provider_testing;
+mod dns_provider_validation;
 pub mod dns_providers;
 pub mod inventory;
 pub mod issuance;

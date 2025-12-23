@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -74,7 +75,7 @@ impl ManualDnsAdapter {
             ),
         ];
         let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(10))
+            .timeout(resolve_dns_timeout())
             .build();
         let mut results = Vec::new();
         for (url, accept) in urls {
@@ -88,13 +89,13 @@ impl ManualDnsAdapter {
                         match serde_json::from_str::<GoogleDnsResponse>(&body) {
                             Ok(parsed) => results.push(parsed),
                             Err(err) => {
-                                eprintln!("[dns] parse failed for {record_name} via {url}: {err}")
+                                warn!("[dns] parse failed for {record_name} via {url}: {err}")
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!("[dns] resolver query failed for {record_name} via {url}: {err}");
+                    warn!("[dns] resolver query failed for {record_name} via {url}: {err}");
                 }
             }
         }
@@ -137,7 +138,7 @@ impl DnsAdapter for ManualDnsAdapter {
     fn check_propagation(&self, req: &DnsChallengeRequest) -> Result<DnsPropagationResult> {
         let record_name = Self::record_name(&req.domain);
         let responses = Self::query_txt(&record_name)?;
-        eprintln!(
+        debug!(
             "[dns] checked {record_name}: statuses={:?} answers={:?}",
             responses.iter().map(|r| r.status).collect::<Vec<_>>(),
             responses
@@ -153,6 +154,19 @@ impl DnsAdapter for ManualDnsAdapter {
 
 fn trim_txt_quotes(value: &str) -> String {
     value.trim_matches('"').trim_matches(' ').trim().to_string()
+}
+
+fn resolve_dns_timeout() -> Duration {
+    const DEFAULT_TIMEOUT_SECS: u64 = 10;
+    let timeout = std::env::var("SSLBOARD_HTTP_TIMEOUT_SECS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_TIMEOUT_SECS);
+    if timeout == 0 {
+        warn!("[dns] invalid timeout value; using default");
+        return Duration::from_secs(DEFAULT_TIMEOUT_SECS);
+    }
+    Duration::from_secs(timeout)
 }
 
 fn derive_zone(hostname: &str) -> String {
@@ -201,7 +215,7 @@ fn interpret_dns_results(
             saw_ok = true;
         }
         if response.status != 0 && response.status != 3 {
-            eprintln!(
+            warn!(
                 "[dns] unexpected status {} for {}",
                 response.status, req.domain
             );
@@ -345,10 +359,9 @@ mod tests {
     /// Ignored by default because it requires network access.
     #[test]
     #[ignore]
-    fn resolves_live_txt_for_ezs3_net() {
+    fn resolves_live_txt_for_ezs3_net() -> Result<()> {
         let record_name = ManualDnsAdapter::record_name("test.ezs3.net");
-        let responses =
-            ManualDnsAdapter::query_txt(&record_name).expect("dns query should succeed");
+        let responses = ManualDnsAdapter::query_txt(&record_name)?;
         let req = DnsChallengeRequest {
             domain: "test.ezs3.net".into(),
             value: "cj9WcLQwCB5xDkgRQ312yXLGko4p9WY-oQjML_T7DIQ".into(),
@@ -361,5 +374,6 @@ mod tests {
             result.state,
             result.observed_values
         );
+        Ok(())
     }
 }

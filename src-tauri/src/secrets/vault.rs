@@ -1,6 +1,7 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
 use zeroize::{Zeroize, Zeroizing};
+use log::debug;
 
 use super::{keyring_store::MasterKeyStore, store::SecretStoreError};
 
@@ -29,18 +30,18 @@ impl MasterKeyVault {
     pub fn unlock(&self) -> Result<(), SecretStoreError> {
         // Skip keyring access if already unlocked
         if self.is_unlocked() {
-            eprintln!("[vault] unlock called but already unlocked, skipping keyring");
+            debug!("[vault] unlock called but already unlocked, skipping keyring");
             return Ok(());
         }
-        eprintln!("[vault] unlock: accessing keyring via get_or_create...");
+        debug!("[vault] unlock: accessing keyring via get_or_create...");
         let key = self.store.get_or_create()?;
-        eprintln!("[vault] unlock: keyring access complete, caching key");
+        debug!("[vault] unlock: keyring access complete, caching key");
         let mut guard = self.cached.write().map_err(map_poison)?;
         if let Some(mut existing) = guard.take() {
             existing.zeroize();
         }
         *guard = Some(key);
-        eprintln!("[vault] unlock: done, vault is now unlocked");
+        debug!("[vault] unlock: done, vault is now unlocked");
         Ok(())
     }
 

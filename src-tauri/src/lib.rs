@@ -15,10 +15,12 @@ use core::commands::{
 use secrets::manager::SecretManager;
 use storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore};
 use tauri::Manager;
+use std::sync::Once;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    init_logging();
+    if let Err(err) = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let inventory_store = InventoryStore::initialize(app.handle().clone())?;
@@ -68,5 +70,17 @@ pub fn run() {
             complete_managed_issuance
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    {
+        log::error!("[tauri] error while running tauri application: {err}");
+    }
+}
+
+fn init_logging() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let env = env_logger::Env::default().default_filter_or("info");
+        env_logger::Builder::from_env(env)
+            .format_timestamp_millis()
+            .init();
+    });
 }

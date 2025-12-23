@@ -11,6 +11,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
+use log::debug;
 use rusqlite::{params, Connection, OpenFlags, Row};
 use serde_json::json;
 use tauri::{AppHandle, Manager};
@@ -66,11 +67,11 @@ impl IssuerConfigStore {
     }
 
     pub fn list(&self) -> Result<Vec<IssuerConfigRecord>> {
-        eprintln!("[issuer_store] list() begin");
+        debug!("[issuer_store] list() begin");
         let conn = self.lock_conn()?;
         let records = Self::query_all(&conn)?;
 
-        eprintln!(
+        debug!(
             "[issuer_store] list() returning {} records (selected: {:?})",
             records.len(),
             records
@@ -173,7 +174,7 @@ impl IssuerConfigStore {
 
     /// Sets the selected issuer, ensuring only one issuer is marked selected.
     pub fn set_selected(&self, issuer_id: &str) -> Result<IssuerConfigRecord> {
-        eprintln!("[issuer_store] set_selected({issuer_id})");
+        debug!("[issuer_store] set_selected({issuer_id})");
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
 

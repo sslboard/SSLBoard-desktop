@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::issuance::dns::{DnsPropagationResult, DnsRecordInstruction, PropagationState};
+use crate::issuance::dns::{DnsPropagationResult, DnsRecordInstruction};
 use crate::secrets::types::{SecretKind, SecretMetadata};
 
 /// Represents the source of a certificate record, indicating whether it was
