@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager};
 pub struct PreferenceRecord {
     pub name: String,
     pub value: String,
+    #[allow(dead_code)]
     pub updated_at: DateTime<Utc>,
 }
 

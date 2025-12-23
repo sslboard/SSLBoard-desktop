@@ -6,6 +6,9 @@ import {
 import { normalizeError } from "../lib/errors";
 
 type PreviewMap = Record<string, DnsProviderResolution | null>;
+type PreviewResult =
+  | { domain: string; resolution: DnsProviderResolution }
+  | { domain: string; error: string };
 
 export function useProviderPreview(domains: string[]) {
   const [providerPreview, setProviderPreview] = useState<PreviewMap>({});
@@ -24,7 +27,7 @@ export function useProviderPreview(domains: string[]) {
     setProviderError(null);
     const timer = window.setTimeout(() => {
       Promise.all(
-        domains.map(async (domain) => {
+        domains.map(async (domain): Promise<PreviewResult> => {
           try {
             const resolution = await resolveDnsProvider(domain);
             return { domain, resolution };
