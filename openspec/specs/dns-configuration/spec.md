@@ -1,5 +1,8 @@
-## ADDED Requirements
+# dns-configuration Specification
 
+## Purpose
+TBD - created by archiving change update-dns-provider-txt-upsert. Update Purpose after archive.
+## Requirements
 ### Requirement: Cloudflare DNS adapter
 
 The system SHALL support Cloudflare DNS-01 automation by creating, updating, and deleting TXT records via the Cloudflare API using a stored API token. The system SHALL automatically discover zone IDs by listing available zones. The system SHALL update an existing TXT record when a duplicate record already exists. The system SHALL verify the TXT content via a read-after-write check before returning success.
@@ -47,3 +50,4 @@ The system SHALL support Route 53 DNS-01 automation by creating, updating, and d
 #### Scenario: Post-write verification
 - **WHEN** the Route 53 adapter writes a TXT record
 - **THEN** the system SHALL fetch the record and confirm the stored content matches the requested value before returning success
+
