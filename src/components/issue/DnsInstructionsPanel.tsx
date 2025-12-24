@@ -49,13 +49,16 @@ export function DnsInstructionsPanel({
       )}
       {hasManual && (
         <div className="grid gap-3 md:grid-cols-2">
-          {manualRecords.map((rec) => (
-            <InstructionCard
-              key={rec.record_name}
-              record={rec}
-              status={statusMap[rec.record_name]}
-            />
-          ))}
+          {manualRecords.map((rec) => {
+            const recordKey = `${rec.record_name}:${rec.value}`;
+            return (
+              <InstructionCard
+                key={recordKey}
+                record={rec}
+                status={statusMap[recordKey]}
+              />
+            );
+          })}
         </div>
       )}
       <div className="flex flex-wrap gap-3">

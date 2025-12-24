@@ -9,6 +9,10 @@ import { normalizeError } from "../lib/errors";
 
 type StatusMap = Record<string, PropagationResult | null>;
 
+function getRecordKey(rec: { record_name: string; value: string }): string {
+  return `${rec.record_name}:${rec.value}`;
+}
+
 export function useManagedIssuanceFlow(selectedIssuerId: string | null, parsedDomains: string[]) {
   const [startResult, setStartResult] = useState<StartIssuanceResponse | null>(null);
   const [statusMap, setStatusMap] = useState<StatusMap>({});
@@ -39,7 +43,7 @@ export function useManagedIssuanceFlow(selectedIssuerId: string | null, parsedDo
       setStartResult(result);
       const initialStatus: StatusMap = {};
       result.dns_records.forEach((rec) => {
-        initialStatus[rec.record_name] = null;
+        initialStatus[getRecordKey(rec)] = null;
       });
       setStatusMap(initialStatus);
     } catch (err) {
@@ -59,7 +63,7 @@ export function useManagedIssuanceFlow(selectedIssuerId: string | null, parsedDo
       for (const rec of startResult.dns_records) {
         const domain = rec.record_name.replace(/^_acme-challenge\./, "");
         const result = await checkDnsPropagation(domain, rec.value);
-        updates[rec.record_name] = result;
+        updates[getRecordKey(rec)] = result;
       }
       setStatusMap((prev) => ({ ...prev, ...updates }));
     } catch (err) {
