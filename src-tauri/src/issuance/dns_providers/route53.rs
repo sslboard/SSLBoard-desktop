@@ -106,6 +106,29 @@ impl Route53Adapter {
 
         let client = Client::new(&config);
 
+        // Check if a TXT record with the correct value already exists
+        let list_response = client
+            .list_resource_record_sets()
+            .hosted_zone_id(&hosted_zone_id)
+            .send()
+            .await
+            .context("Failed to list Route 53 DNS records")?;
+
+        let sets = list_response.resource_record_sets();
+        if let Some(record_set) = sets.iter().find(|rs| {
+            rs.name() == record_name && rs.r#type() == &RrType::Txt
+        }) {
+            // Check if any resource record already has the correct value
+            let has_correct_value = record_set
+                .resource_records()
+                .iter()
+                .any(|record| record.value() == &formatted_value);
+            if has_correct_value {
+                // Record with correct value already exists, no need to create
+                return Ok(());
+            }
+        }
+
         let record_set = ResourceRecordSet::builder()
             .name(record_name)
             .set_resource_records(Some(vec![ResourceRecord::builder()

@@ -217,6 +217,18 @@ impl DigitalOceanAdapter {
 
     fn upsert_txt_record(&self, record_name: &str, value: &str) -> Result<()> {
         let existing = self.list_txt_records(record_name)?;
+        let expected_normalized = Self::normalize_txt_content(value);
+        
+        // Check if any existing record already has the correct value
+        for record in &existing {
+            if let Some(data) = self.fetch_record_data(record.id)? {
+                if Self::normalize_txt_content(&data) == expected_normalized {
+                    // Record with correct value already exists, no need to create/update
+                    return Ok(());
+                }
+            }
+        }
+        
         let mut record_ids = Vec::new();
         if existing.is_empty() {
             let record_id = self.create_txt_record(record_name, value)?;
@@ -227,7 +239,6 @@ impl DigitalOceanAdapter {
                 record_ids.push(record.id);
             }
         }
-        let expected_normalized = Self::normalize_txt_content(value);
         let mut matched = false;
         for _ in 0..5 {
             for record_id in &record_ids {

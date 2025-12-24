@@ -115,10 +115,58 @@ impl CloudflareAdapter {
         Ok(zone.id.clone())
     }
 
+    fn list_existing_txt_records(
+        &self,
+        client: &reqwest::blocking::Client,
+        zone_id: &str,
+        record_name: &str,
+    ) -> Result<Vec<CloudflareDnsRecordResult>> {
+        let response = client
+            .get(&format!(
+                "https://api.cloudflare.com/client/v4/zones/{}/dns_records?type=TXT&name={}",
+                zone_id, record_name
+            ))
+            .header("Authorization", format!("Bearer {}", self.api_token))
+            .header("Content-Type", "application/json")
+            .send()
+            .context("Failed to list Cloudflare DNS records")?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!("Failed to list Cloudflare DNS records"));
+        }
+
+        #[derive(Deserialize)]
+        struct CloudflareDnsRecordListResponse {
+            result: Vec<CloudflareDnsRecordResult>,
+            success: bool,
+        }
+
+        let list_result: CloudflareDnsRecordListResponse = response
+            .json()
+            .context("Failed to parse Cloudflare DNS record list")?;
+
+        if !list_result.success {
+            return Err(anyhow!("Cloudflare API returned unsuccessful response"));
+        }
+
+        Ok(list_result.result)
+    }
+
     fn create_txt_record(&mut self, record_name: &str, value: &str) -> Result<String> {
         let zone_id = self.discover_zone_id()?;
         let client = http::HttpClient::shared();
         let formatted_value = Self::format_txt_content(value);
+
+        // Check if a TXT record with the correct value already exists
+        let existing_records = self.list_existing_txt_records(&client, &zone_id, record_name)?;
+        for record in &existing_records {
+            if let Some(ref content) = record.content {
+                if content == &formatted_value {
+                    // Record with correct value already exists, return its ID
+                    return Ok(record.id.clone());
+                }
+            }
+        }
 
         let record = CloudflareDnsRecord {
             record_type: "TXT".to_string(),
@@ -199,36 +247,8 @@ impl CloudflareAdapter {
         record_name: &str,
         value: &str,
     ) -> Result<String> {
-        let response = client
-            .get(&format!(
-                "https://api.cloudflare.com/client/v4/zones/{}/dns_records?type=TXT&name={}",
-                zone_id, record_name
-            ))
-            .header("Authorization", format!("Bearer {}", self.api_token))
-            .header("Content-Type", "application/json")
-            .send()
-            .context("Failed to list Cloudflare DNS records")?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("Failed to list Cloudflare DNS records"));
-        }
-
-        #[derive(Deserialize)]
-        struct CloudflareDnsRecordListResponse {
-            result: Vec<CloudflareDnsRecordResult>,
-            success: bool,
-        }
-
-        let list_result: CloudflareDnsRecordListResponse = response
-            .json()
-            .context("Failed to parse Cloudflare DNS record list")?;
-
-        if !list_result.success {
-            return Err(anyhow!("Cloudflare API returned unsuccessful response"));
-        }
-
         let formatted_value = Self::format_txt_content(value);
-        let records = list_result.result;
+        let records = self.list_existing_txt_records(client, zone_id, record_name)?;
         if records.is_empty() {
             return Err(anyhow!("TXT record not found: {}", record_name));
         }
@@ -298,36 +318,8 @@ impl CloudflareAdapter {
         let client = http::HttpClient::shared();
 
         // First, find the record ID
-        let response = client
-            .get(&format!(
-                "https://api.cloudflare.com/client/v4/zones/{}/dns_records?type=TXT&name={}",
-                zone_id, record_name
-            ))
-            .header("Authorization", format!("Bearer {}", self.api_token))
-            .header("Content-Type", "application/json")
-            .send()
-            .context("Failed to list Cloudflare DNS records")?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("Failed to list Cloudflare DNS records"));
-        }
-
-        #[derive(Deserialize)]
-        struct CloudflareDnsRecordListResponse {
-            result: Vec<CloudflareDnsRecordResult>,
-            success: bool,
-        }
-
-        let list_result: CloudflareDnsRecordListResponse = response
-            .json()
-            .context("Failed to parse Cloudflare DNS record list")?;
-
-        if !list_result.success {
-            return Err(anyhow!("Cloudflare API returned unsuccessful response"));
-        }
-
-        let record_id = list_result
-            .result
+        let records = self.list_existing_txt_records(&client, &zone_id, record_name)?;
+        let record_id = records
             .first()
             .ok_or_else(|| anyhow!("TXT record not found: {}", record_name))?
             .id
