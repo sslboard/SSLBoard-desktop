@@ -317,30 +317,34 @@ impl CloudflareAdapter {
         let zone_id = self.discover_zone_id()?;
         let client = http::HttpClient::shared();
 
-        // First, find the record ID
+        // Find all TXT records with this name (needed for apex+wildcard certs)
         let records = self.list_existing_txt_records(&client, &zone_id, record_name)?;
-        let record_id = records
-            .first()
-            .ok_or_else(|| anyhow!("TXT record not found: {}", record_name))?
-            .id
-            .clone();
+        if records.is_empty() {
+            return Ok(()); // No records to delete
+        }
 
-        // Delete the record
-        let delete_response = client
-            .delete(&format!(
-                "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-                zone_id, record_id
-            ))
-            .header("Authorization", format!("Bearer {}", self.api_token))
-            .send()
-            .context("Failed to delete Cloudflare DNS record")?;
+        // Delete all TXT records with this name
+        for record in records {
+            let delete_response = client
+                .delete(&format!(
+                    "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
+                    zone_id, record.id
+                ))
+                .header("Authorization", format!("Bearer {}", self.api_token))
+                .send()
+                .context("Failed to delete Cloudflare DNS record")?;
 
-        if !delete_response.status().is_success() {
-            return Err(http::status_error(
-                "Cloudflare",
-                delete_response.status(),
-                None,
-            ));
+            if !delete_response.status().is_success() {
+                // If record was already deleted (404), continue; otherwise return error
+                if delete_response.status() == 404 {
+                    continue;
+                }
+                return Err(http::status_error(
+                    "Cloudflare",
+                    delete_response.status(),
+                    None,
+                ));
+            }
         }
 
         Ok(())

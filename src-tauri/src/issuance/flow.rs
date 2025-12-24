@@ -68,6 +68,8 @@ struct PendingIssuance {
     domains: Vec<String>,
     managed_key_ref: String,
     managed_key_pem: String,
+    /// DNS records that were automatically created and need cleanup after issuance
+    dns_records_to_cleanup: Vec<(String, String)>, // (domain, record_name)
 }
 
 static SESSIONS: OnceLock<Mutex<HashMap<String, PendingIssuance>>> = OnceLock::new();
@@ -148,6 +150,7 @@ pub fn start_managed_dns01(
         .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
 
     let mut dns_records = Vec::new();
+    let mut dns_records_to_cleanup = Vec::new();
     let adapter = ManualDnsAdapter::new();
     for auth in auths {
         let dns = auth.dns_challenge();
@@ -170,6 +173,8 @@ pub fn start_managed_dns01(
                 let provider_adapter = adapter_for_provider(provider, secrets);
                 provider_adapter.create_txt(&record.record_name, &record.value)?;
                 record.adapter = provider.provider_type.clone();
+                // Store for cleanup after successful issuance
+                dns_records_to_cleanup.push((domain.clone(), record.record_name.clone()));
             }
         }
         dns_records.push(record);
@@ -196,6 +201,7 @@ pub fn start_managed_dns01(
         domains: normalized,
         managed_key_ref: managed_key.id.clone(),
         managed_key_pem: key_pem_str,
+        dns_records_to_cleanup,
     };
 
     sessions()
@@ -211,6 +217,7 @@ pub fn complete_managed_dns01(
     request_id: &str,
     inventory: &InventoryStore,
     secrets: &SecretManager,
+    dns_store: &DnsConfigStore,
 ) -> Result<CertificateRecord> {
     let pending = sessions()
         .lock()
@@ -223,6 +230,7 @@ pub fn complete_managed_dns01(
         domains,
         managed_key_ref,
         managed_key_pem,
+        dns_records_to_cleanup,
     } = pending;
 
     let auths = order.authorizations().map_err(|e| anyhow!(e.to_string()))?;
@@ -250,6 +258,32 @@ pub fn complete_managed_dns01(
 
     // Best-effort check the key still resolves
     let _ = secrets.resolve_secret(&managed_key_ref);
+
+    // Clean up DNS challenge records after successful issuance
+    for (domain, record_name) in dns_records_to_cleanup {
+        if let Ok(resolution) = dns_store.resolve_provider_for_domain(&domain) {
+            if let Some(provider) = resolution.provider.as_ref() {
+                if resolution.ambiguous.len() <= 1 {
+                    let provider_adapter = adapter_for_provider(provider, secrets);
+                    if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
+                        // Log but don't fail issuance if cleanup fails
+                        log::warn!(
+                            "[dns] Failed to cleanup TXT record {} for domain {}: {}",
+                            record_name,
+                            domain,
+                            err
+                        );
+                    } else {
+                        log::debug!(
+                            "[dns] Successfully cleaned up TXT record {} for domain {}",
+                            record_name,
+                            domain
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     Ok(record)
 }

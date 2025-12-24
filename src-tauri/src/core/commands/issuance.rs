@@ -41,12 +41,14 @@ pub async fn start_managed_issuance(
 pub async fn complete_managed_issuance(
     inventory: State<'_, InventoryStore>,
     secrets: State<'_, SecretManager>,
+    dns_store: State<'_, DnsConfigStore>,
     complete_req: CompleteIssuanceRequest,
 ) -> Result<CertificateRecord, String> {
     let inventory = inventory.inner().clone();
     let secrets = secrets.inner().clone();
+    let dns_store = dns_store.inner().clone();
     spawn_blocking(move || {
-        complete_managed_dns01(&complete_req.request_id, &inventory, &secrets)
+        complete_managed_dns01(&complete_req.request_id, &inventory, &secrets, &dns_store)
     })
         .await
         .map_err(|err| format!("Complete issuance join error: {err}"))?
