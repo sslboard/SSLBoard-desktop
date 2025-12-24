@@ -5,14 +5,12 @@ import {
   listDnsProviders,
   testDnsProvider,
   updateDnsProvider,
-  validateDnsProviderToken,
   type CreateDnsProviderRequest,
   type DnsProviderRecord,
   type DnsProviderTestResult,
-  type DnsProviderTokenValidationResult,
-  type ValidateDnsProviderTokenRequest,
 } from "../lib/dns-providers";
 import { normalizeError } from "../lib/errors";
+import { useDnsProviderTokenTest } from "./useDnsProviderTokenTest";
 
 export type ProviderFormState = CreateDnsProviderRequest & { provider_id?: string };
 
@@ -36,9 +34,12 @@ export function useDnsProviderManager() {
   );
   const [testLoading, setTestLoading] = useState<Record<string, boolean>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [tokenTestResult, setTokenTestResult] =
-    useState<DnsProviderTokenValidationResult | null>(null);
-  const [tokenTestLoading, setTokenTestLoading] = useState(false);
+  const {
+    tokenTestResult,
+    tokenTestLoading,
+    testToken,
+    clearTokenTestResult,
+  } = useDnsProviderTokenTest();
 
   useEffect(() => {
     void refreshProviders();
@@ -70,7 +71,7 @@ export function useDnsProviderManager() {
       route53_secret_key: "",
       config: null,
     });
-    setTokenTestResult(null);
+    clearTokenTestResult();
   }
 
   function startEdit(provider: DnsProviderRecord) {
@@ -86,7 +87,7 @@ export function useDnsProviderManager() {
       route53_secret_key: "",
       config: provider.config ?? null,
     });
-    setTokenTestResult(null);
+    clearTokenTestResult();
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -159,32 +160,8 @@ export function useDnsProviderManager() {
     }
   }
 
-  async function handleTokenTest() {
-    if (tokenTestLoading) return;
-    setTokenTestLoading(true);
-    try {
-      const payload: ValidateDnsProviderTokenRequest = {
-        provider_type: formState.provider_type,
-        api_token: formState.api_token,
-        route53_access_key: formState.route53_access_key,
-        route53_secret_key: formState.route53_secret_key,
-      };
-      const result = await validateDnsProviderToken(payload);
-      setTokenTestResult(result);
-    } catch (err) {
-      setTokenTestResult({
-        success: false,
-        error: normalizeError(err),
-      });
-    } finally {
-      setTokenTestLoading(false);
-    }
-  }
-
-  function clearTokenTestResult() {
-    if (tokenTestResult) {
-      setTokenTestResult(null);
-    }
+  function handleTokenTest() {
+    void testToken(formState);
   }
 
   return {
