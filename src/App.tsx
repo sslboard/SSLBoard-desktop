@@ -8,6 +8,7 @@ import {
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
 import { ThemeProvider } from "./components/theme-provider";
+import { Toaster } from "./components/ui/sonner";
 import { CertificatesPage } from "./pages/Certificates";
 import { IssuePage } from "./pages/Issue";
 import { DiscoverPage } from "./pages/Discover";
@@ -61,6 +62,7 @@ function App() {
           <Route path="/settings/dns-providers" element={<DnsProvidersPage />} />
         </Routes>
       </AppShell>
+      <Toaster />
     </ThemeProvider>
   );
 }

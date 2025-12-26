@@ -3,6 +3,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { CertificateRecord, ExportBundle } from "../../lib/certificates";
 import { exportCertificatePem } from "../../lib/certificates";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import { exportFolderDefault } from "./certificate-utils";
 import { useExportDestination } from "../../hooks/useExportDestination";
 import { ExportBundleSelector } from "./export/ExportBundleSelector";
@@ -109,23 +118,23 @@ export function CertificateExportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-xl rounded-xl border bg-card p-6 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-lg font-semibold text-foreground">
-              Export certificate
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Export PEM files for {certificate.sans[0] ?? certificate.id}
-            </div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Export certificate</DialogTitle>
+          <DialogDescription>
+            Export PEM files for {certificate.sans[0] ?? certificate.id}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-6 space-y-5">
+        <div className="space-y-5">
           <ExportBundleSelector bundle={bundle} onBundleChange={setBundle} />
 
           <ExportDestinationPicker
@@ -152,18 +161,18 @@ export function CertificateExportModal({
           <ExportResultBanner error={exportError} successPath={successPath} />
         </div>
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-          <Button variant="ghost" onClick={onClose}>
-            Done
-          </Button>
+        <DialogFooter className="gap-3 sm:gap-2">
+          <DialogClose asChild>
+            <Button variant="ghost">Done</Button>
+          </DialogClose>
           <Button
             onClick={() => handleExport(false)}
             disabled={isSubmitting || (includeKey && !confirmKeyExport)}
           >
             {isSubmitting ? "Exporting..." : "Export"}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

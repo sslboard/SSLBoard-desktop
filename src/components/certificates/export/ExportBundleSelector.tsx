@@ -1,4 +1,5 @@
 import type { ExportBundle } from "../../../lib/certificates";
+import { Button } from "../../ui/button";
 
 const bundleOptions: { value: ExportBundle; label: string; hint: string }[] = [
   { value: "cert", label: "Certificate", hint: "Leaf certificate only" },
@@ -22,11 +23,12 @@ export function ExportBundleSelector({
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
         {bundleOptions.map((option) => (
-          <button
+          <Button
             key={option.value}
             type="button"
+            variant="outline"
             onClick={() => onBundleChange(option.value)}
-            className={`rounded-lg border px-3 py-2 text-left text-sm ${
+            className={`h-auto w-full flex-col items-start justify-start rounded-lg px-3 py-2 text-left font-normal ${
               bundle === option.value
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border bg-background text-foreground hover:bg-muted/50"
@@ -36,10 +38,9 @@ export function ExportBundleSelector({
             <div className="text-xs text-muted-foreground">
               {option.hint}
             </div>
-          </button>
+          </Button>
         ))}
       </div>
     </div>
   );
 }
-

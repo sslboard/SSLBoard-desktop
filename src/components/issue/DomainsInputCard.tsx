@@ -1,5 +1,15 @@
 import { Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Label } from "../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Textarea } from "../ui/textarea";
 import { DnsProviderPreviewCard } from "./DnsProviderPreviewCard";
 import type { DnsProviderResolution } from "../../lib/dns-providers";
 import type { IssuanceKeyOption } from "../../lib/issuance";
@@ -40,13 +50,13 @@ export function DomainsInputCard({
   onReset,
 }: DomainsInputCardProps) {
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-soft">
-      <div className="flex items-start justify-between gap-4">
+    <Card className="shadow-soft">
+      <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
             Managed key · DNS-01
           </div>
-          <h2 className="text-xl font-bold text-foreground">Issue a certificate</h2>
+          <CardTitle className="text-xl font-bold">Issue a certificate</CardTitle>
           <p className="mt-2 text-sm text-muted-foreground">
             Enter the domains/SANs, then start issuance. We will verify DNS and finalize
             automatically, pausing only if manual TXT records are required. Private keys stay in
@@ -56,13 +66,15 @@ export function DomainsInputCard({
         <div className="hidden rounded-lg border bg-muted px-3 py-2 text-xs text-muted-foreground sm:block">
           Your private key stays on your machine, encrypted at rest.
         </div>
-      </div>
+      </CardHeader>
 
-      <div className="mt-6 space-y-4">
-        <label className="space-y-2 text-sm">
-          <span className="text-muted-foreground">Domains / SANs</span>
-          <textarea
-            className="w-full rounded-md border bg-background px-3 py-2 text-foreground shadow-sm outline-none focus:border-primary"
+      <CardContent className="space-y-4">
+        <div className="space-y-2 text-sm">
+          <Label className="text-muted-foreground" htmlFor="domains-input">
+            Domains / SANs
+          </Label>
+          <Textarea
+            id="domains-input"
             value={domainsInput}
             onChange={(e) => onDomainsChange(e.target.value)}
             rows={3}
@@ -71,7 +83,7 @@ export function DomainsInputCard({
           <p className="text-xs text-muted-foreground">
             Comma or newline separated. Issuer: {issuerLabel} ({issuerEnvironment}).
           </p>
-        </label>
+        </div>
 
         {parsedDomains.length > 0 ? (
           <DnsProviderPreviewCard
@@ -82,28 +94,30 @@ export function DomainsInputCard({
           />
         ) : null}
 
-        <label className="space-y-2 text-sm">
-          <span className="text-muted-foreground">Key algorithm</span>
-          <select
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none focus:border-primary"
+        <div className="space-y-2 text-sm">
+          <Label className="text-muted-foreground">Key algorithm</Label>
+          <Select
             value={keyOption}
-            onChange={(e) =>
-              onKeyOptionChange(
-                e.target.value as IssuanceKeyOption,
-              )
+            onValueChange={(value) =>
+              onKeyOptionChange(value as IssuanceKeyOption)
             }
             disabled={loadingStart || hasStartResult}
           >
-            <option value="rsa-2048">RSA 2048</option>
-            <option value="rsa-3072">RSA 3072</option>
-            <option value="rsa-4096">RSA 4096</option>
-            <option value="ecdsa-p256">ECDSA P-256</option>
-            <option value="ecdsa-p384">ECDSA P-384</option>
-          </select>
+            <SelectTrigger>
+              <SelectValue placeholder="Select key algorithm" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="rsa-2048">RSA 2048</SelectItem>
+              <SelectItem value="rsa-3072">RSA 3072</SelectItem>
+              <SelectItem value="rsa-4096">RSA 4096</SelectItem>
+              <SelectItem value="ecdsa-p256">ECDSA P-256</SelectItem>
+              <SelectItem value="ecdsa-p384">ECDSA P-384</SelectItem>
+            </SelectContent>
+          </Select>
           <p className="text-xs text-muted-foreground">
             Choose a key type and size/curve for this issuance run.
           </p>
-        </label>
+        </div>
 
         <div className="flex flex-wrap gap-3">
           <Button
@@ -122,7 +136,7 @@ export function DomainsInputCard({
             Configure the issuer&apos;s ACME details in Settings before starting issuance.
           </p>
         ) : null}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

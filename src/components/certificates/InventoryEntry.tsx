@@ -1,5 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import type { CertificateRecord } from "../../lib/certificates";
+import { Button } from "../ui/button";
 import {
   certificateStatus,
   formatCertificateDate,
@@ -17,9 +18,10 @@ export function InventoryEntry({ record, isSelected, onClick }: InventoryEntryPr
   const subject = primarySubject(record);
 
   return (
-    <button
+    <Button
+      variant="ghost"
       onClick={onClick}
-      className={`flex w-full items-start gap-4 rounded-lg px-3 py-3 text-left transition ${isSelected ? "bg-primary/5 ring-1 ring-primary" : "hover:bg-muted/60"
+      className={`h-auto w-full items-start justify-start gap-4 rounded-lg px-3 py-3 text-left font-normal transition ${isSelected ? "bg-primary/5 ring-1 ring-primary" : "hover:bg-muted/60"
         }`}
     >
       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -47,6 +49,6 @@ export function InventoryEntry({ record, isSelected, onClick }: InventoryEntryPr
           Valid {formatCertificateDate(record.not_before)} – {formatCertificateDate(record.not_after)}
         </div>
       </div>
-    </button>
+    </Button>
   );
 }

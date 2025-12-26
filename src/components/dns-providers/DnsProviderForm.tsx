@@ -1,6 +1,17 @@
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Textarea } from "../ui/textarea";
 import type {
   DnsProviderTokenValidationResult,
   DnsProviderType,
@@ -39,12 +50,12 @@ export function DnsProviderForm({
   }
 
   return (
-    <div className="rounded-xl border bg-card p-5 shadow-soft">
-      <div className="flex items-center justify-between gap-3">
+    <Card className="shadow-soft">
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <div className="text-sm font-semibold">
+          <CardTitle className="text-sm font-semibold">
             {formMode === "edit" ? "Edit provider" : "Add provider"}
-          </div>
+          </CardTitle>
           <p className="text-xs text-muted-foreground">
             Map providers to domain suffixes (comma or space separated).
           </p>
@@ -54,38 +65,38 @@ export function DnsProviderForm({
             Cancel edit
           </Button>
         ) : null}
-      </div>
-
-      <form className="mt-4 space-y-4" onSubmit={onSubmit}>
+      </CardHeader>
+      <CardContent>
+        <form className="space-y-4" onSubmit={onSubmit}>
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">
-            Provider type
-          </label>
-          <select
-            className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+          <Label>Provider type</Label>
+          <Select
             value={formState.provider_type}
-            onChange={(e) => {
+            onValueChange={(value) => {
               handleFormStateChange({
-                provider_type: e.target.value as DnsProviderType,
+                provider_type: value as DnsProviderType,
               });
               onTokenInputChange();
             }}
             disabled={formMode === "edit"}
           >
-            {PROVIDER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue placeholder="Select provider type" />
+            </SelectTrigger>
+            <SelectContent>
+              {PROVIDER_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">
-            Provider label
-          </label>
-          <input
-            className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+          <Label htmlFor="provider-label">Provider label</Label>
+          <Input
+            id="provider-label"
             placeholder="Production DNS"
             value={formState.label}
             onChange={(e) => handleFormStateChange({ label: e.target.value })}
@@ -94,11 +105,9 @@ export function DnsProviderForm({
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">
-            Domain suffixes
-          </label>
-          <textarea
-            className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+          <Label htmlFor="domain-suffixes">Domain suffixes</Label>
+          <Textarea
+            id="domain-suffixes"
             rows={3}
             placeholder="sslboard.com, example.net"
             value={formState.domain_suffixes}
@@ -130,7 +139,8 @@ export function DnsProviderForm({
           )}
           {formMode === "edit" ? "Save provider" : "Add provider"}
         </Button>
-      </form>
-    </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

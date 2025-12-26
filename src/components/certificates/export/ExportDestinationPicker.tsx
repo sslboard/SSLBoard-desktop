@@ -1,4 +1,6 @@
 import { Button } from "../../ui/button";
+import { Input } from "../../ui/input";
+import { Label } from "../../ui/label";
 
 interface ExportDestinationPickerProps {
   destinationDir: string | null;
@@ -27,16 +29,19 @@ export function ExportDestinationPicker({
         </div>
       </div>
       <div className="mt-3">
-        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <Label
+          htmlFor="export-subfolder-name"
+          className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Export subfolder name
-        </label>
-        <input
+        </Label>
+        <Input
+          id="export-subfolder-name"
           value={folderName}
           onChange={(event) => onFolderNameChange(event.target.value)}
-          className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+          className="mt-2"
         />
       </div>
     </div>
   );
 }
-

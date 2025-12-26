@@ -1,15 +1,19 @@
-import { Lock, LockOpen, Loader2, Menu } from "lucide-react";
-import { Button } from "../ui/button";
+import { Lock, LockOpen, Loader2 } from "lucide-react";
+import { NavLink } from "react-router-dom";
+import { cn } from "../../lib/utils";
+import { Logo } from "../logo";
+import { Button, buttonVariants } from "../ui/button";
+import type { NavItem } from "./sidebar";
 
 type TopbarProps = {
-  onMenuToggle: () => void;
+  navItems: NavItem[];
   vaultUnlocked: boolean | null;
   vaultBusy: boolean;
   onToggleVault: () => void;
 };
 
 export function Topbar({
-  onMenuToggle,
+  navItems,
   vaultUnlocked,
   vaultBusy,
   onToggleVault,
@@ -22,19 +26,35 @@ export function Topbar({
         : "Vault locked";
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 w-full items-center justify-between border-b bg-card/95 px-4 backdrop-blur">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden"
-          onClick={onMenuToggle}
-          aria-label="Toggle navigation"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+    <header className="sticky top-0 z-30 w-full border-b bg-card/95 px-4 backdrop-blur">
+      <div className="flex h-14 items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <Logo variant="topbar" className="shrink-0" />
+          <nav className="flex max-w-full flex-1 items-center gap-1 overflow-x-auto text-sm">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/settings"}
+                className={({ isActive }) =>
+                  cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    "h-8 gap-2 px-3",
+                    isActive
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:bg-muted/70",
+                  )
+                }
+              >
+                {item.icon}
+                <span className="whitespace-nowrap font-medium">
+                  {item.label}
+                </span>
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <Button
           variant="outline"
           size="sm"
@@ -51,6 +71,7 @@ export function Topbar({
           )}
           <span className="font-medium text-foreground">{vaultLabel}</span>
         </Button>
+      </div>
       </div>
     </header>
   );

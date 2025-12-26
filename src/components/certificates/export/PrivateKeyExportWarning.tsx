@@ -1,3 +1,6 @@
+import { Checkbox } from "../../ui/checkbox";
+import { Label } from "../../ui/label";
+
 interface PrivateKeyExportWarningProps {
   keyAvailable: boolean;
   includeKey: boolean;
@@ -21,22 +24,22 @@ export function PrivateKeyExportWarning({
         if you trust the destination.
       </div>
       <div className="mt-3 flex items-start gap-2">
-        <input
+        <Checkbox
           id="include-key"
-          type="checkbox"
-          className="mt-1 h-4 w-4"
+          className="mt-1 border-amber-400"
           disabled={!keyAvailable}
           checked={includeKey}
-          onChange={(event) => {
-            onIncludeKeyChange(event.target.checked);
-            if (!event.target.checked) {
+          onCheckedChange={(checked) => {
+            const shouldInclude = checked === true;
+            onIncludeKeyChange(shouldInclude);
+            if (!shouldInclude) {
               onConfirmKeyExportChange(false);
             }
           }}
         />
-        <label htmlFor="include-key" className="text-sm font-semibold">
+        <Label htmlFor="include-key" className="text-sm font-semibold text-amber-900">
           Include private key (`privkey.pem`)
-        </label>
+        </Label>
       </div>
       {!keyAvailable && (
         <div className="mt-2 text-xs text-amber-700">
@@ -46,20 +49,20 @@ export function PrivateKeyExportWarning({
       )}
       {includeKey && (
         <div className="mt-3 flex items-start gap-2 rounded-md bg-amber-100/80 p-2">
-          <input
+          <Checkbox
             id="confirm-key"
-            type="checkbox"
-            className="mt-1 h-4 w-4"
+            className="mt-1 border-amber-400"
             checked={confirmKeyExport}
-            onChange={(event) => onConfirmKeyExportChange(event.target.checked)}
+            onCheckedChange={(checked) =>
+              onConfirmKeyExportChange(checked === true)
+            }
           />
-          <label htmlFor="confirm-key" className="text-xs text-amber-900">
+          <Label htmlFor="confirm-key" className="text-xs text-amber-900">
             I understand exporting private keys is sensitive and I accept
             the risk.
-          </label>
+          </Label>
         </div>
       )}
     </div>
   );
 }
-

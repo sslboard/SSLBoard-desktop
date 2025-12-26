@@ -1,5 +1,7 @@
 import { CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
 import type {
   DnsProviderTokenValidationResult,
   DnsProviderType,
@@ -41,13 +43,11 @@ export function ProviderCredentialsFields({
       {isRoute53 ? (
         <div className="space-y-3">
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">
-              Access key ID
-            </label>
-            <input
+            <Label htmlFor="route53-access-key">Access key ID</Label>
+            <Input
+              id="route53-access-key"
               type="password"
               autoComplete="off"
-              className="w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
               placeholder={
                 formMode === "edit"
                   ? "Enter a new access key (optional)"
@@ -62,13 +62,11 @@ export function ProviderCredentialsFields({
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">
-              Secret access key
-            </label>
-            <input
+            <Label htmlFor="route53-secret-key">Secret access key</Label>
+            <Input
+              id="route53-secret-key"
               type="password"
               autoComplete="off"
-              className="w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
               placeholder={
                 formMode === "edit"
                   ? "Enter a new secret key (optional)"
@@ -85,13 +83,11 @@ export function ProviderCredentialsFields({
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">
-            API token
-          </label>
-          <input
+          <Label htmlFor="provider-api-token">API token</Label>
+          <Input
+            id="provider-api-token"
             type="password"
             autoComplete="off"
-            className="w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
             placeholder={
               formMode === "edit"
                 ? "Enter a new token to rotate (optional)"
@@ -163,4 +159,3 @@ export function ProviderCredentialsFields({
     </div>
   );
 }
-

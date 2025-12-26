@@ -1,4 +1,13 @@
 import type { IssuerConfig } from "../../lib/issuers";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Label } from "../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 interface IssuerSelectionCardProps {
   issuers: IssuerConfig[];
@@ -18,38 +27,38 @@ export function IssuerSelectionCard({
   onSelectIssuer,
 }: IssuerSelectionCardProps) {
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-soft">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold">Issuer selection</div>
-          <p className="text-xs text-muted-foreground">
-            Choose the issuer for this issuance run.
-          </p>
-        </div>
-      </div>
+    <Card className="shadow-soft">
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold">Issuer selection</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Choose the issuer for this issuance run.
+        </p>
+      </CardHeader>
 
       {issuerError ? (
-        <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="mx-6 mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {issuerError}
         </div>
       ) : null}
 
-      <div className="mt-4 space-y-2">
-        <label className="text-sm font-medium text-foreground">
-          Issuer
-        </label>
-        <select
-          className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
-          value={selectedIssuer?.issuer_id ?? ""}
-          onChange={(e) => onSelectIssuer(e.target.value)}
+      <CardContent className="space-y-2">
+        <Label>Issuer</Label>
+        <Select
+          value={selectedIssuer?.issuer_id ?? undefined}
+          onValueChange={onSelectIssuer}
           disabled={issuerLoading}
         >
-          {issuers.map((issuer) => (
-            <option key={issuer.issuer_id} value={issuer.issuer_id}>
-              {issuer.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger>
+            <SelectValue placeholder="Select issuer" />
+          </SelectTrigger>
+          <SelectContent>
+            {issuers.map((issuer) => (
+              <SelectItem key={issuer.issuer_id} value={issuer.issuer_id}>
+                {issuer.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="text-xs text-muted-foreground">
           {selectedIssuer?.directory_url ?? "https://acme-staging-v02.api.letsencrypt.org/directory"}
         </p>
@@ -58,8 +67,7 @@ export function IssuerSelectionCard({
             Configure the issuer&apos;s ACME account in Settings before issuing.
           </p>
         ) : null}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
-

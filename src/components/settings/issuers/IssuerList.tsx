@@ -1,4 +1,5 @@
 import { Button } from "../../ui/button";
+import { Card, CardContent } from "../../ui/card";
 import type { IssuerConfig } from "../../../lib/issuers";
 import { formatEnvironment, formatIssuerType } from "../../../lib/issuers/format";
 
@@ -18,11 +19,8 @@ export function IssuerList({
   return (
     <div className="space-y-3">
       {issuers.map((issuer) => (
-        <div
-          key={issuer.issuer_id}
-          className="rounded-lg border bg-background/80 p-4 shadow-sm"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <Card key={issuer.issuer_id} className="bg-background/80 shadow-sm">
+          <CardContent className="flex flex-wrap items-start justify-between gap-3 p-4">
             <div>
               <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                 {issuer.label}
@@ -56,10 +54,9 @@ export function IssuerList({
                 Remove
               </Button>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );
 }
-

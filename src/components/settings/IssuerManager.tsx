@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import {
   createIssuer,
   deleteIssuer,
@@ -153,10 +154,10 @@ export function IssuerManager() {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-5 shadow-soft">
-      <div className="flex items-center justify-between gap-3">
+    <Card className="shadow-soft">
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <div className="text-sm font-semibold">Issuer management</div>
+          <CardTitle className="text-sm font-semibold">Issuer management</CardTitle>
           <p className="text-xs text-muted-foreground">
             Add or edit issuer entries. ACME issuers require contact email and ToS acceptance.
           </p>
@@ -171,37 +172,39 @@ export function IssuerManager() {
             Cancel edit
           </Button>
         ) : null}
-      </div>
+      </CardHeader>
 
       {issuerError ? (
-        <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="mx-6 mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {issuerError}
         </div>
       ) : null}
 
       {issuerFormError ? (
-        <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="mx-6 mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {issuerFormError}
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,1fr]">
-        <IssuerList
-          issuers={issuers}
-          issuerLoading={issuerLoading}
-          onEdit={handleEditIssuer}
-          onDelete={handleDeleteIssuer}
-        />
+      <CardContent>
+        <div className="grid gap-4 lg:grid-cols-[1.2fr,1fr]">
+          <IssuerList
+            issuers={issuers}
+            issuerLoading={issuerLoading}
+            onEdit={handleEditIssuer}
+            onDelete={handleDeleteIssuer}
+          />
 
-        <IssuerForm
-          formState={issuerForm}
-          formMode={issuerFormMode}
-          saving={issuerFormSaving}
-          onFormStateChange={handleFormStateChange}
-          onEnvironmentChange={updateIssuerEnvironment}
-          onSubmit={handleIssuerSubmit}
-        />
-      </div>
-    </div>
+          <IssuerForm
+            formState={issuerForm}
+            formMode={issuerFormMode}
+            saving={issuerFormSaving}
+            onFormStateChange={handleFormStateChange}
+            onEnvironmentChange={updateIssuerEnvironment}
+            onSubmit={handleIssuerSubmit}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }

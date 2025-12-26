@@ -1,6 +1,26 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { useForm } from "react-hook-form";
 import { KeyRound, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "../ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { cn } from "../../lib/utils";
 import {
   type CreateSecretRequest,
@@ -21,11 +41,14 @@ export function SecretReferenceManager() {
     removeSecret,
     rotateSecret,
   } = useSecretReferences();
-  const [formState, setFormState] = useState<CreateSecretRequest>({
-    label: "",
-    kind: "acme_account_key",
-    secret_value: "",
+  const form = useForm<CreateSecretRequest>({
+    defaultValues: {
+      label: "",
+      kind: "acme_account_key",
+      secret_value: "",
+    },
   });
+  const secretValue = form.watch("secret_value");
   const [rotateTarget, setRotateTarget] = useState<string | null>(null);
   const [rotateValue, setRotateValue] = useState("");
   const [rotateLabel, setRotateLabel] = useState("");
@@ -33,17 +56,20 @@ export function SecretReferenceManager() {
   const hasSecrets = useMemo(() => secrets.length > 0, [secrets]);
 
   function resetForm() {
-    setFormState({ label: "", kind: "acme_account_key", secret_value: "" });
+    form.reset({
+      label: "",
+      kind: "acme_account_key",
+      secret_value: "",
+    });
   }
 
-  async function handleCreate(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const created = await createSecret(formState);
+  async function handleCreate(values: CreateSecretRequest) {
+    const created = await createSecret(values);
     if (created) {
       resetForm();
       setRotateTarget(null);
     }
-    setFormState((prev) => ({ ...prev, secret_value: "" }));
+    form.setValue("secret_value", "");
   }
 
   async function handleDelete(id: string) {
@@ -106,12 +132,14 @@ export function SecretReferenceManager() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr,1fr]">
-        <div className="rounded-xl border bg-card p-5 shadow-soft">
-          <div className="flex items-center justify-between gap-3">
+        <Card className="shadow-soft">
+          <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
             <div className="flex items-center gap-3">
               <KeyRound className="h-5 w-5 text-primary" />
               <div>
-                <div className="font-semibold">Secret references</div>
+                <CardTitle className="text-sm font-semibold">
+                  Secret references
+                </CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Friendly labels, created dates, and kinds. No secret bytes
                   ever leave Rust.
@@ -128,9 +156,9 @@ export function SecretReferenceManager() {
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
               Refresh
             </Button>
-          </div>
+          </CardHeader>
 
-          <div className="mt-4 space-y-3">
+          <CardContent className="space-y-3">
             {loading ? (
               <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/60 p-4 text-sm text-muted-foreground">
                 Loading secrets…
@@ -189,25 +217,25 @@ export function SecretReferenceManager() {
                   <form className="mt-3 space-y-3" onSubmit={handleRotate}>
                     <div className="grid gap-3 sm:grid-cols-[2fr,1fr]">
                       <div>
-                        <label className="text-sm font-medium text-foreground">
+                        <Label htmlFor={`secret-rotate-value-${secret.id}`}>
                           New secret value
-                        </label>
-                        <input
+                        </Label>
+                        <Input
+                          id={`secret-rotate-value-${secret.id}`}
                           type="password"
                           autoComplete="off"
                           required
-                          className="mt-2 w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
                           placeholder="Paste token or key material (kept in Rust only)"
                           value={rotateValue}
                           onChange={(e) => setRotateValue(e.target.value)}
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-foreground">
+                        <Label htmlFor={`secret-rotate-label-${secret.id}`}>
                           Label (optional)
-                        </label>
-                        <input
-                          className="mt-2 w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+                        </Label>
+                        <Input
+                          id={`secret-rotate-label-${secret.id}`}
                           value={rotateLabel}
                           onChange={(e) => setRotateLabel(e.target.value)}
                         />
@@ -243,92 +271,104 @@ export function SecretReferenceManager() {
                 ) : null}
               </div>
             ))}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="rounded-xl border bg-card p-5 shadow-soft">
-          <div className="flex items-center gap-3">
+        <Card className="shadow-soft">
+          <CardHeader className="flex-row items-start gap-3 space-y-0">
             <Shield className="h-5 w-5 text-primary" />
             <div>
-              <div className="font-semibold">Add secret reference</div>
+              <CardTitle className="text-sm font-semibold">
+                Add secret reference
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
                 UI sends the value into Rust once. Only metadata is stored for listing.
               </p>
             </div>
-          </div>
+          </CardHeader>
 
-          <form className="mt-4 space-y-4" onSubmit={handleCreate}>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Label
-              </label>
-              <input
-                className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
-                placeholder="e.g., Cloudflare prod DNS"
-                value={formState.label}
-                onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, label: e.target.value }))
-                }
-                required
-              />
-            </div>
+          <CardContent>
+            <Form {...form}>
+              <form className="space-y-4" onSubmit={form.handleSubmit(handleCreate)}>
+                <FormField
+                  control={form.control}
+                  name="label"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Label</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., Cloudflare prod DNS"
+                          {...field}
+                          required
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Secret type
-              </label>
-              <select
-                className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
-                value={formState.kind}
-                onChange={(e) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    kind: e.target.value as SecretKind,
-                  }))
-                }
-              >
-                <option value="acme_account_key">ACME account key</option>
-                <option value="managed_private_key">Managed private key</option>
-              </select>
-            </div>
+                <FormField
+                  control={form.control}
+                  name="kind"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Secret type</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select secret type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="acme_account_key">ACME account key</SelectItem>
+                          <SelectItem value="managed_private_key">Managed private key</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Secret value
-              </label>
-              <input
-                type="password"
-                autoComplete="off"
-                className="w-full rounded-lg border bg-background/60 p-3 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
-                placeholder="Paste token or key material. It is sent into Rust only once."
-                value={formState.secret_value}
-                onChange={(e) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    secret_value: e.target.value,
-                  }))
-                }
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Value is never returned to the UI. A prefixed reference ID will be created.
-              </p>
-            </div>
+                <FormField
+                  control={form.control}
+                  name="secret_value"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Secret value</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          autoComplete="off"
+                          placeholder="Paste token or key material. It is sent into Rust only once."
+                          {...field}
+                          required
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Value is never returned to the UI. A prefixed reference ID will be created.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <Button
-              type="submit"
-              className="w-full gap-2"
-              disabled={saving || !formState.secret_value}
-            >
-              {saving ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Add secret reference
-            </Button>
-          </form>
-        </div>
+                <Button
+                  type="submit"
+                  className="w-full gap-2"
+                  disabled={saving || !secretValue}
+                >
+                  {saving ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  Add secret reference
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

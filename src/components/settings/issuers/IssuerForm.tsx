@@ -1,6 +1,16 @@
 import { type FormEvent } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "../../ui/button";
+import { Checkbox } from "../../ui/checkbox";
+import { Input } from "../../ui/input";
+import { Label } from "../../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../ui/select";
 import type { IssuerEnvironment } from "../../../lib/issuers";
 import type { IssuerFormState } from "../../../lib/issuers/validation";
 
@@ -24,11 +34,9 @@ export function IssuerForm({
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
       <div className="space-y-1">
-        <label className="text-sm font-medium text-foreground">
-          Issuer name
-        </label>
-        <input
-          className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+        <Label htmlFor="issuer-name">Issuer name</Label>
+        <Input
+          id="issuer-name"
           value={formState.label}
           onChange={(e) => onFormStateChange({ label: e.target.value })}
           placeholder="Let's Encrypt (Custom)"
@@ -37,28 +45,27 @@ export function IssuerForm({
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-foreground">
-          Environment
-        </label>
-        <select
-          className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+        <Label>Environment</Label>
+        <Select
           value={formState.environment}
-          onChange={(e) => {
-            const env = e.target.value as IssuerEnvironment;
-            onEnvironmentChange(env);
-          }}
+          onValueChange={(value) =>
+            onEnvironmentChange(value as IssuerEnvironment)
+          }
         >
-          <option value="staging">Sandbox (staging)</option>
-          <option value="production">Production</option>
-        </select>
+          <SelectTrigger>
+            <SelectValue placeholder="Select environment" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="staging">Sandbox (staging)</SelectItem>
+            <SelectItem value="production">Production</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-foreground">
-          Directory URL
-        </label>
-        <input
-          className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+        <Label htmlFor="issuer-directory-url">Directory URL</Label>
+        <Input
+          id="issuer-directory-url"
           value={formState.directory_url}
           onChange={(e) => onFormStateChange({ directory_url: e.target.value })}
           required
@@ -66,11 +73,9 @@ export function IssuerForm({
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-foreground">
-          Contact email
-        </label>
-        <input
-          className="w-full rounded-lg border bg-background/60 p-2.5 text-sm shadow-inner outline-none ring-offset-background focus:ring-2 focus:ring-primary/50"
+        <Label htmlFor="issuer-contact-email">Contact email</Label>
+        <Input
+          id="issuer-contact-email"
           value={formState.contact_email}
           onChange={(e) => onFormStateChange({ contact_email: e.target.value })}
           placeholder="you@example.com"
@@ -78,16 +83,19 @@ export function IssuerForm({
         />
       </div>
 
-      <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <input
-          type="checkbox"
-          className="h-4 w-4"
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="issuer-tos-agreed"
           checked={formState.tos_agreed}
-          onChange={(e) => onFormStateChange({ tos_agreed: e.target.checked })}
+          onCheckedChange={(checked) =>
+            onFormStateChange({ tos_agreed: checked === true })
+          }
           required
         />
+        <Label htmlFor="issuer-tos-agreed" className="text-sm font-medium">
         I accept the ACME Terms of Service
-      </label>
+        </Label>
+      </div>
 
       <Button type="submit" className="w-full gap-2" disabled={saving}>
         {saving ? (
@@ -100,4 +108,3 @@ export function IssuerForm({
     </form>
   );
 }
-

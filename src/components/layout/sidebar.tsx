@@ -1,6 +1,16 @@
-import { NavLink } from "react-router-dom";
-import { cn } from "../../lib/utils";
+import { NavLink, useLocation } from "react-router-dom";
 import { Logo } from "../logo";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "../ui/sidebar";
 
 export type NavItem = {
   label: string;
@@ -14,38 +24,58 @@ type SidebarProps = {
   onNavigate?: () => void;
 };
 
-export function Sidebar({ items, onNavigate }: SidebarProps) {
+export function AppSidebar({ items, onNavigate }: SidebarProps) {
+  const location = useLocation();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  const handleNavigate = () => {
+    onNavigate?.();
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+
   return (
-    <aside className="flex h-full min-w-[240px] flex-col gap-6 border-r bg-card px-4 py-6">
-      <Logo />
-      <nav className="flex flex-1 flex-col gap-1 text-sm">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onNavigate}
-            end={item.to === "/settings"}
-            className={({ isActive }) =>
-              cn(
-                "group flex items-start gap-3 rounded-xl px-3 py-3 transition-colors",
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-foreground hover:bg-muted",
-              )
-            }
-          >
-            <span className="mt-1">{item.icon}</span>
-            <span className="flex flex-col gap-0.5">
-              <span className="font-semibold">{item.label}</span>
-              {item.description ? (
-                <span className="text-xs text-muted-foreground">
-                  {item.description}
-                </span>
-              ) : null}
-            </span>
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+    <Sidebar collapsible="offcanvas" className="border-r border-sidebar-border">
+      <SidebarHeader className="px-4 py-4">
+        <Logo />
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {items.map((item) => {
+                const isActive = location.pathname === item.to;
+
+                return (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      asChild
+                      size="lg"
+                      isActive={isActive}
+                      onClick={handleNavigate}
+                      tooltip={item.label}
+                      className="h-auto items-start gap-3 py-3"
+                    >
+                      <NavLink to={item.to} end={item.to === "/settings"}>
+                        <span className="mt-0.5">{item.icon}</span>
+                        <span className="flex flex-col gap-0.5">
+                          <span className="font-semibold">{item.label}</span>
+                          {item.description ? (
+                            <span className="text-xs text-muted-foreground">
+                              {item.description}
+                            </span>
+                          ) : null}
+                        </span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+    </Sidebar>
   );
 }
