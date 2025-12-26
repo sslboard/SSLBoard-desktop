@@ -1,4 +1,4 @@
-import { Lock, LockOpen, Loader2, Menu, ShieldCheck, Sparkles } from "lucide-react";
+import { Lock, LockOpen, Loader2, Menu } from "lucide-react";
 import { Button } from "../ui/button";
 
 type TopbarProps = {
@@ -51,13 +51,6 @@ export function Topbar({
           )}
           <span className="font-medium text-foreground">{vaultLabel}</span>
         </Button>
-        <div className="hidden items-center gap-2 rounded-full border px-3 py-1 sm:flex">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-foreground">Preview Shell</span>
-        </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
       </div>
     </header>
   );
