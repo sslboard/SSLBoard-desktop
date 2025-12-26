@@ -20,12 +20,12 @@ function formatDate(iso: string) {
   return Number.isNaN(date.getTime())
     ? "-"
     : date.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 }
 
 export function DnsProviderList({

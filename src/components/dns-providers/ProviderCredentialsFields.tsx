@@ -127,11 +127,10 @@ export function ProviderCredentialsFields({
       </div>
       {tokenTestResult ? (
         <div
-          className={`rounded-md border px-3 py-2 text-xs ${
-            tokenTestResult.success
+          className={`rounded-md border px-3 py-2 text-xs ${tokenTestResult.success
               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
               : "border-rose-200 bg-rose-50 text-rose-700"
-          }`}
+            }`}
         >
           <div className="flex items-center gap-2 font-semibold">
             {tokenTestResult.success ? (

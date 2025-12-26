@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use log::warn;
-use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use reqwest::blocking::Client;
 
 pub struct HttpClient;
 
@@ -25,9 +25,13 @@ impl HttpClient {
 }
 
 fn resolve_timeout() -> Duration {
+    let env_value = std::env::var("SSLBOARD_HTTP_TIMEOUT_SECS").ok();
+    parse_timeout(env_value.as_deref())
+}
+
+fn parse_timeout(env_value: Option<&str>) -> Duration {
     const DEFAULT_TIMEOUT_SECS: u64 = 15;
-    let timeout = std::env::var("SSLBOARD_HTTP_TIMEOUT_SECS")
-        .ok()
+    let timeout = env_value
         .and_then(|raw| raw.parse::<u64>().ok())
         .unwrap_or(DEFAULT_TIMEOUT_SECS);
     if timeout == 0 {
@@ -37,11 +41,7 @@ fn resolve_timeout() -> Duration {
     Duration::from_secs(timeout)
 }
 
-pub fn status_error(
-    provider: &str,
-    status: StatusCode,
-    body: Option<String>,
-) -> anyhow::Error {
+pub fn status_error(provider: &str, status: StatusCode, body: Option<String>) -> anyhow::Error {
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         return anyhow!("{provider} authentication failed");
     }
@@ -56,27 +56,9 @@ pub fn status_error(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_timeout, status_error};
+    use super::{parse_timeout, status_error};
     use reqwest::StatusCode;
-    use std::sync::{Mutex, OnceLock};
     use std::time::Duration;
-
-    fn with_timeout_env<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
-        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let key = "SSLBOARD_HTTP_TIMEOUT_SECS";
-        let previous = std::env::var(key).ok();
-        match value {
-            Some(value) => std::env::set_var(key, value),
-            None => std::env::remove_var(key),
-        }
-        let result = f();
-        match previous {
-            Some(value) => std::env::set_var(key, value),
-            None => std::env::remove_var(key),
-        }
-        result
-    }
 
     #[test]
     fn status_error_maps_auth() {
@@ -103,26 +85,26 @@ mod tests {
     }
 
     #[test]
-    fn resolve_timeout_defaults() {
-        let timeout = with_timeout_env(None, resolve_timeout);
+    fn parse_timeout_defaults() {
+        let timeout = parse_timeout(None);
         assert_eq!(timeout, Duration::from_secs(15));
     }
 
     #[test]
-    fn resolve_timeout_parses_env() {
-        let timeout = with_timeout_env(Some("20"), resolve_timeout);
+    fn parse_timeout_parses_valid() {
+        let timeout = parse_timeout(Some("20"));
         assert_eq!(timeout, Duration::from_secs(20));
     }
 
     #[test]
-    fn resolve_timeout_rejects_zero() {
-        let timeout = with_timeout_env(Some("0"), resolve_timeout);
+    fn parse_timeout_rejects_zero() {
+        let timeout = parse_timeout(Some("0"));
         assert_eq!(timeout, Duration::from_secs(15));
     }
 
     #[test]
-    fn resolve_timeout_rejects_invalid() {
-        let timeout = with_timeout_env(Some("nope"), resolve_timeout);
+    fn parse_timeout_rejects_invalid() {
+        let timeout = parse_timeout(Some("nope"));
         assert_eq!(timeout, Duration::from_secs(15));
     }
 }
