@@ -1,7 +1,35 @@
-import { Copy } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import { Button } from "../ui/button";
+import { cn } from "../../lib/utils";
 
 export function InstructionField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current !== null) {
+        window.clearTimeout(resetTimer.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      if (resetTimer.current !== null) {
+        window.clearTimeout(resetTimer.current);
+      }
+      resetTimer.current = window.setTimeout(() => {
+        setCopied(false);
+      }, 1200);
+    } catch {
+      // Ignore clipboard errors; some environments may block access.
+    }
+  };
+
   return (
     <div className="space-y-1">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -12,11 +40,18 @@ export function InstructionField({ label, value }: { label: string; value: strin
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => void navigator.clipboard.writeText(value)}
+          className={cn(
+            "h-7 px-2 text-xs transition-colors",
+            copied && "animate-pulse bg-primary/10 text-primary hover:bg-primary/10",
+          )}
+          onClick={() => void handleCopy()}
         >
-          <Copy className="mr-1 h-3.5 w-3.5" />
-          Copy
+          {copied ? (
+            <Check className="mr-1 h-3.5 w-3.5" />
+          ) : (
+            <Copy className="mr-1 h-3.5 w-3.5" />
+          )}
+          {copied ? "Copied" : "Copy"}
         </Button>
       </div>
     </div>
