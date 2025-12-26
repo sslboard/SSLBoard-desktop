@@ -2,6 +2,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { DnsProviderPreviewCard } from "./DnsProviderPreviewCard";
 import type { DnsProviderResolution } from "../../lib/dns-providers";
+import type { IssuanceKeyOption } from "../../lib/issuance";
 
 interface DomainsInputCardProps {
   domainsInput: string;
@@ -14,7 +15,9 @@ interface DomainsInputCardProps {
   providerPreview: Record<string, DnsProviderResolution | null>;
   providerLoading: boolean;
   providerError: string | null;
+  keyOption: IssuanceKeyOption;
   onDomainsChange: (value: string) => void;
+  onKeyOptionChange: (value: IssuanceKeyOption) => void;
   onStart: () => void;
   onReset: () => void;
 }
@@ -30,7 +33,9 @@ export function DomainsInputCard({
   providerPreview,
   providerLoading,
   providerError,
+  keyOption,
   onDomainsChange,
+  onKeyOptionChange,
   onStart,
   onReset,
 }: DomainsInputCardProps) {
@@ -76,6 +81,29 @@ export function DomainsInputCard({
           />
         ) : null}
 
+        <label className="space-y-2 text-sm">
+          <span className="text-muted-foreground">Key algorithm</span>
+          <select
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none focus:border-primary"
+            value={keyOption}
+            onChange={(e) =>
+              onKeyOptionChange(
+                e.target.value as IssuanceKeyOption,
+              )
+            }
+            disabled={loadingStart || hasStartResult}
+          >
+            <option value="rsa-2048">RSA 2048</option>
+            <option value="rsa-3072">RSA 3072</option>
+            <option value="rsa-4096">RSA 4096</option>
+            <option value="ecdsa-p256">ECDSA P-256</option>
+            <option value="ecdsa-p384">ECDSA P-384</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Choose a key type and size/curve for this issuance run.
+          </p>
+        </label>
+
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={() => void onStart()}
@@ -97,4 +125,3 @@ export function DomainsInputCard({
     </div>
   );
 }
-

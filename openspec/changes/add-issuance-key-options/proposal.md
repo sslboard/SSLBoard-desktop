@@ -8,7 +8,8 @@ Users need the ability to issue certificates with ECC keys and stronger RSA key 
 - Update the Issue page to let users select the desired key algorithm and size/curve.
 - Validate requested key parameters in the Rust core before issuance and use them during key generation.
 - Maintain a backward-compatible default when the UI does not provide key parameters.
+- Persist the selected key algorithm/size/curve in certificate metadata for display and filtering.
 
 ## Impact
 - Affected specs: `certificate-issuance` (new capability spec)
-- Affected code: `src/lib/issuance.ts`, `src/hooks/useManagedIssuanceFlow.ts`, `src/components/issue/*`, `src-tauri/src/core/types.rs`, `src-tauri/src/issuance/*`
+- Affected code: `src/lib/issuance.ts`, `src/hooks/useManagedIssuanceFlow.ts`, `src/components/issue/*`, `src-tauri/src/core/types.rs`, `src-tauri/src/issuance/*`, `src-tauri/src/storage/*`

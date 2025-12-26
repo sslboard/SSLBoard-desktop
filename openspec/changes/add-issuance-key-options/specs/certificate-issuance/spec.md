@@ -33,8 +33,22 @@ The Rust core SHALL validate key parameter combinations and SHALL default to RSA
 - **THEN** the Rust core SHALL reject the request with a validation error before starting issuance
 
 ### Requirement: Issue page key selection controls
-The Issue page SHALL present key algorithm options and size/curve choices that match the supported list.
+The Issue page SHALL present a single combined dropdown with key algorithm options and size/curve choices that match the supported list.
 
 #### Scenario: User views key options
 - **WHEN** the Issue page renders the issuance form
 - **THEN** it SHALL display RSA sizes 2048/3072/4096 and ECDSA curves P-256/P-384 as selectable options
+
+### Requirement: Persist key algorithm metadata
+The system SHALL store the selected key algorithm and size/curve in certificate metadata for display and filtering.
+
+#### Scenario: Metadata reflects the selected key type
+- **WHEN** a managed issuance completes using ECDSA P-256
+- **THEN** the certificate record SHALL include key algorithm metadata indicating ECDSA P-256
+
+### Requirement: Single key algorithm per issuance request
+Each managed issuance request SHALL specify exactly one key algorithm and size/curve, and the system SHALL issue one certificate per request.
+
+#### Scenario: RSA and ECDSA both required
+- **WHEN** a user needs both RSA and ECDSA certificates for the same names
+- **THEN** the system SHALL require separate managed issuance requests for each key algorithm

@@ -4,7 +4,7 @@ use std::{
 };
 
 use acme_lib::{
-    create_rsa_key,
+    create_p256_key, create_p384_key, create_rsa_key,
     order::{Auth, NewOrder},
     persist::{Persist, PersistKey, PersistKind},
     Certificate, Directory, DirectoryUrl, Error as AcmeError,
@@ -16,7 +16,7 @@ use uuid::Uuid;
 use x509_parser::pem::parse_x509_pem;
 
 use crate::{
-    core::types::{CertificateRecord, CertificateSource},
+    core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve},
     issuance::dns::{DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter},
     issuance::dns_providers::adapter_for_provider,
     secrets::{manager::SecretManager, types::SecretKind},
@@ -68,6 +68,9 @@ struct PendingIssuance {
     domains: Vec<String>,
     managed_key_ref: String,
     managed_key_pem: String,
+    key_algorithm: KeyAlgorithm,
+    key_size: Option<u16>,
+    key_curve: Option<KeyCurve>,
     /// DNS records that were automatically created and need cleanup after issuance
     dns_records_to_cleanup: Vec<(String, String)>, // (domain, record_name)
 }
@@ -82,6 +85,9 @@ fn sessions() -> &'static Mutex<HashMap<String, PendingIssuance>> {
 pub fn start_managed_dns01(
     domains: Vec<String>,
     issuer_id: String,
+    key_algorithm: Option<KeyAlgorithm>,
+    key_size: Option<u16>,
+    key_curve: Option<KeyCurve>,
     issuer_store: &IssuerConfigStore,
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
@@ -122,6 +128,9 @@ pub fn start_managed_dns01(
         .map_err(|e| anyhow!(e.to_string()))?;
     let account_key_pem = String::from_utf8(account_key_pem)
         .map_err(|_| anyhow!("Stored ACME account key is not valid UTF-8"))?;
+
+    let (key_algorithm, key_size, key_curve) =
+        resolve_key_params(key_algorithm, key_size, key_curve)?;
 
     let persist = EphemeralPersist::new();
     persist.seed_account_key(&contact_email, account_key_pem.as_bytes())?;
@@ -180,13 +189,27 @@ pub fn start_managed_dns01(
         dns_records.push(record);
     }
 
-    let key = create_rsa_key(2048);
+    let key = match key_algorithm {
+        KeyAlgorithm::Rsa => {
+            let size = key_size.unwrap_or(2048);
+            create_rsa_key(u32::from(size))
+        }
+        KeyAlgorithm::Ecdsa => match key_curve {
+            Some(KeyCurve::P256) => create_p256_key(),
+            Some(KeyCurve::P384) => create_p384_key(),
+            None => return Err(anyhow!("ECDSA key_curve is required")),
+        },
+    };
     let key_pem = key
         .private_key_to_pem_pkcs8()
         .map_err(|e| anyhow!("failed to serialize private key: {e}"))?;
     let key_pem_str = String::from_utf8(key_pem)
         .map_err(|_| anyhow!("managed key PEM contained invalid UTF-8"))?;
-    let key_label = format!("Managed key for {}", primary);
+    let key_label = format!(
+        "Managed {} key for {}",
+        format_key_label(&key_algorithm, key_size, key_curve.as_ref()),
+        primary
+    );
     let managed_key = secrets
         .create_secret(
             SecretKind::ManagedPrivateKey,
@@ -201,6 +224,9 @@ pub fn start_managed_dns01(
         domains: normalized,
         managed_key_ref: managed_key.id.clone(),
         managed_key_pem: key_pem_str,
+        key_algorithm,
+        key_size,
+        key_curve,
         dns_records_to_cleanup,
     };
 
@@ -230,6 +256,9 @@ pub fn complete_managed_dns01(
         domains,
         managed_key_ref,
         managed_key_pem,
+        key_algorithm,
+        key_size,
+        key_curve,
         dns_records_to_cleanup,
     } = pending;
 
@@ -253,7 +282,14 @@ pub fn complete_managed_dns01(
         .download_and_save_cert()
         .map_err(|e| anyhow!(e.to_string()))?;
 
-    let record = build_record(&certificate, domains, managed_key_ref.clone())?;
+    let record = build_record(
+        &certificate,
+        domains,
+        managed_key_ref.clone(),
+        key_algorithm,
+        key_size,
+        key_curve,
+    )?;
     inventory.insert_certificate(&record)?;
 
     // Best-effort check the key still resolves
@@ -292,6 +328,9 @@ fn build_record(
     certificate: &Certificate,
     domains: Vec<String>,
     managed_key_ref: String,
+    key_algorithm: KeyAlgorithm,
+    key_size: Option<u16>,
+    key_curve: Option<KeyCurve>,
 ) -> Result<CertificateRecord> {
     let pem = certificate.certificate();
     let (_, pem_block) = parse_x509_pem(pem.as_bytes())
@@ -333,7 +372,103 @@ fn build_record(
         tags: vec![],
         chain_pem: Some(pem.to_string()),
         managed_key_ref: Some(managed_key_ref),
+        key_algorithm: Some(key_algorithm),
+        key_size,
+        key_curve,
     })
+}
+
+fn resolve_key_params(
+    key_algorithm: Option<KeyAlgorithm>,
+    key_size: Option<u16>,
+    key_curve: Option<KeyCurve>,
+) -> Result<(KeyAlgorithm, Option<u16>, Option<KeyCurve>)> {
+    match key_algorithm {
+        None => {
+            if key_size.is_some() || key_curve.is_some() {
+                return Err(anyhow!(
+                    "Key parameters must include key_algorithm when size/curve is provided"
+                ));
+            }
+            Ok((KeyAlgorithm::Rsa, Some(2048), None))
+        }
+        Some(KeyAlgorithm::Rsa) => {
+            let size = key_size.ok_or_else(|| anyhow!("RSA key_size is required"))?;
+            if !matches!(size, 2048 | 3072 | 4096) {
+                return Err(anyhow!(
+                    "Unsupported RSA key size {size}. Allowed: 2048, 3072, 4096"
+                ));
+            }
+            if key_curve.is_some() {
+                return Err(anyhow!("RSA issuance does not accept key_curve"));
+            }
+            Ok((KeyAlgorithm::Rsa, Some(size), None))
+        }
+        Some(KeyAlgorithm::Ecdsa) => {
+            if key_size.is_some() {
+                return Err(anyhow!("ECDSA issuance does not accept key_size"));
+            }
+            let curve = key_curve.ok_or_else(|| anyhow!("ECDSA key_curve is required"))?;
+            match curve {
+                KeyCurve::P256 | KeyCurve::P384 => Ok((KeyAlgorithm::Ecdsa, None, Some(curve))),
+            }
+        }
+    }
+}
+
+fn format_key_label(
+    key_algorithm: &KeyAlgorithm,
+    key_size: Option<u16>,
+    key_curve: Option<&KeyCurve>,
+) -> String {
+    match key_algorithm {
+        KeyAlgorithm::Rsa => {
+            let size = key_size.unwrap_or(2048);
+            format!("RSA {}", size)
+        }
+        KeyAlgorithm::Ecdsa => match key_curve {
+            Some(KeyCurve::P256) => "ECDSA P-256".to_string(),
+            Some(KeyCurve::P384) => "ECDSA P-384".to_string(),
+            None => "ECDSA".to_string(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_key_params, KeyAlgorithm, KeyCurve};
+
+    #[test]
+    fn defaults_to_rsa_2048_when_missing() {
+        let (algo, size, curve) = resolve_key_params(None, None, None).unwrap();
+        assert!(matches!(algo, KeyAlgorithm::Rsa));
+        assert_eq!(size, Some(2048));
+        assert!(curve.is_none());
+    }
+
+    #[test]
+    fn accepts_rsa_3072() {
+        let (algo, size, curve) =
+            resolve_key_params(Some(KeyAlgorithm::Rsa), Some(3072), None).unwrap();
+        assert!(matches!(algo, KeyAlgorithm::Rsa));
+        assert_eq!(size, Some(3072));
+        assert!(curve.is_none());
+    }
+
+    #[test]
+    fn accepts_ecdsa_p384() {
+        let (algo, size, curve) =
+            resolve_key_params(Some(KeyAlgorithm::Ecdsa), None, Some(KeyCurve::P384)).unwrap();
+        assert!(matches!(algo, KeyAlgorithm::Ecdsa));
+        assert!(size.is_none());
+        assert!(matches!(curve, Some(KeyCurve::P384)));
+    }
+
+    #[test]
+    fn rejects_invalid_size() {
+        let err = resolve_key_params(Some(KeyAlgorithm::Rsa), Some(1024), None).unwrap_err();
+        assert!(err.to_string().contains("Unsupported RSA key size"));
+    }
 }
 
 fn root_from_hostname(hostname: &str) -> String {

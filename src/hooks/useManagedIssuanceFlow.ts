@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { checkDnsPropagation, type PropagationResult } from "../lib/dns";
 import {
   completeManagedIssuance,
+  keyOptionToParams,
   startManagedIssuance,
+  type IssuanceKeyOption,
   type StartIssuanceResponse,
 } from "../lib/issuance";
 import { normalizeError } from "../lib/errors";
@@ -13,7 +15,11 @@ function getRecordKey(rec: { record_name: string; value: string }): string {
   return `${rec.record_name}:${rec.value}`;
 }
 
-export function useManagedIssuanceFlow(selectedIssuerId: string | null, parsedDomains: string[]) {
+export function useManagedIssuanceFlow(
+  selectedIssuerId: string | null,
+  parsedDomains: string[],
+  keyOption: IssuanceKeyOption,
+) {
   const [startResult, setStartResult] = useState<StartIssuanceResponse | null>(null);
   const [statusMap, setStatusMap] = useState<StatusMap>({});
   const [loadingStart, setLoadingStart] = useState(false);
@@ -36,9 +42,11 @@ export function useManagedIssuanceFlow(selectedIssuerId: string | null, parsedDo
       if (!selectedIssuerId) {
         throw new Error("Select an issuer before starting issuance.");
       }
+      const keyParams = keyOptionToParams(keyOption);
       const result = await startManagedIssuance({
         domains: parsedDomains,
         issuer_id: selectedIssuerId,
+        ...keyParams,
       });
       setStartResult(result);
       const initialStatus: StatusMap = {};
@@ -134,4 +142,3 @@ export function useManagedIssuanceFlow(selectedIssuerId: string | null, parsedDo
     reset,
   };
 }
-

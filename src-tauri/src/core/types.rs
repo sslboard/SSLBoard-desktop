@@ -15,6 +15,20 @@ pub enum CertificateSource {
     Managed,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyAlgorithm {
+    Rsa,
+    Ecdsa,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyCurve {
+    P256,
+    P384,
+}
+
 /// Represents a complete certificate record with all metadata and validation information.
 /// This structure is used for storing, retrieving, and displaying SSL/TLS certificate data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +59,12 @@ pub struct CertificateRecord {
     pub managed_key_ref: Option<String>,
     /// PEM-encoded certificate chain for export
     pub chain_pem: Option<String>,
+    /// Key algorithm metadata for managed issuance (rsa/ecdsa)
+    pub key_algorithm: Option<KeyAlgorithm>,
+    /// RSA key size when applicable
+    pub key_size: Option<u16>,
+    /// ECDSA curve when applicable
+    pub key_curve: Option<KeyCurve>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -310,6 +330,9 @@ pub struct DnsProviderTokenValidationResult {
 pub struct StartIssuanceRequest {
     pub domains: Vec<String>,
     pub issuer_id: String,
+    pub key_algorithm: Option<KeyAlgorithm>,
+    pub key_size: Option<u16>,
+    pub key_curve: Option<KeyCurve>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -10,9 +10,11 @@ import { IssuerSelectionCard } from "../components/issue/IssuerSelectionCard";
 import { DomainsInputCard } from "../components/issue/DomainsInputCard";
 import { DnsInstructionsPanel } from "../components/issue/DnsInstructionsPanel";
 import { IssuanceResultBanner } from "../components/issue/IssuanceResultBanner";
+import type { IssuanceKeyOption } from "../lib/issuance";
 
 export function IssuePage() {
   const [domainsInput, setDomainsInput] = useState("test.ezs3.net");
+  const [keyOption, setKeyOption] = useState<IssuanceKeyOption>("rsa-2048");
   const {
     issuers,
     issuerLoading,
@@ -46,7 +48,7 @@ export function IssuePage() {
     checkAll,
     finalizeIssuance,
     reset,
-  } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains);
+  } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, keyOption);
 
   const issuerLabel = selectedIssuer?.label ?? "No issuer selected";
   const issuerEnvironment = selectedIssuer?.environment ?? "staging";
@@ -65,6 +67,7 @@ export function IssuePage() {
 
   function handleReset() {
     setDomainsInput("test.ezs3.net");
+    setKeyOption("rsa-2048");
     reset();
   }
 
@@ -115,7 +118,9 @@ export function IssuePage() {
         providerPreview={providerPreview}
         providerLoading={providerLoading}
         providerError={providerError}
+        keyOption={keyOption}
         onDomainsChange={setDomainsInput}
+        onKeyOptionChange={setKeyOption}
         onStart={handleStart}
         onReset={handleReset}
       />

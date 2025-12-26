@@ -13,6 +13,22 @@ interface CertificateDetailProps {
   error: string | null;
 }
 
+function formatKeyInfo(record: CertificateRecord): string {
+  if (!record.key_algorithm) {
+    return "Unknown";
+  }
+  if (record.key_algorithm === "rsa") {
+    return `RSA ${record.key_size ?? "?"}`;
+  }
+  if (record.key_curve === "p256") {
+    return "ECDSA P-256";
+  }
+  if (record.key_curve === "p384") {
+    return "ECDSA P-384";
+  }
+  return "ECDSA";
+}
+
 export function CertificateDetail({
   selected,
   loading,
@@ -76,6 +92,7 @@ export function CertificateDetail({
                 label="Domain roots"
                 value={selected.domain_roots.join(", ")}
               />
+              <DetailItem label="Key algorithm" value={formatKeyInfo(selected)} />
               <DetailItem label="Source" value={selected.source} />
             </div>
             <div>

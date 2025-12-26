@@ -14,7 +14,7 @@ use chrono::{Duration, Utc};
 use rusqlite::{params, Connection, OpenFlags, Row};
 use tauri::{AppHandle, Manager};
 
-use crate::core::types::{CertificateRecord, CertificateSource};
+use crate::core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve};
 
 /// SQLite-based storage for certificate inventory data.
 /// Provides thread-safe access to certificate records with CRUD operations.
@@ -115,7 +115,10 @@ impl InventoryStore {
                 domain_roots TEXT NOT NULL,
                 tags TEXT NOT NULL,
                 managed_key_ref TEXT,
-                chain_pem TEXT
+                chain_pem TEXT,
+                key_algorithm TEXT,
+                key_size INTEGER,
+                key_curve TEXT
             );
             "#,
         )?;
@@ -145,6 +148,27 @@ impl InventoryStore {
             )
             .context("failed to add chain_pem column")?;
         }
+        if !existing.iter().any(|c| c == "key_algorithm") {
+            conn.execute(
+                "ALTER TABLE certificate_records ADD COLUMN key_algorithm TEXT",
+                [],
+            )
+            .context("failed to add key_algorithm column")?;
+        }
+        if !existing.iter().any(|c| c == "key_size") {
+            conn.execute(
+                "ALTER TABLE certificate_records ADD COLUMN key_size INTEGER",
+                [],
+            )
+            .context("failed to add key_size column")?;
+        }
+        if !existing.iter().any(|c| c == "key_curve") {
+            conn.execute(
+                "ALTER TABLE certificate_records ADD COLUMN key_curve TEXT",
+                [],
+            )
+            .context("failed to add key_curve column")?;
+        }
         Ok(())
     }
 
@@ -163,7 +187,7 @@ impl InventoryStore {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            FROM certificate_records
+            , key_algorithm, key_size, key_curve FROM certificate_records
             ORDER BY not_after DESC
             "#,
         )?;
@@ -194,7 +218,7 @@ impl InventoryStore {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            FROM certificate_records
+            , key_algorithm, key_size, key_curve FROM certificate_records
             WHERE id = ?1
             "#,
         )?;
@@ -267,6 +291,9 @@ impl InventoryStore {
             tags: vec!["demo".to_string(), "sandbox".to_string()],
             managed_key_ref: None,
             chain_pem: None,
+            key_algorithm: None,
+            key_size: None,
+            key_curve: None,
         };
 
         Self::insert_with_conn(&mut conn, &sample)
@@ -290,8 +317,8 @@ impl InventoryStore {
         conn.execute(
             r#"
             INSERT OR REPLACE INTO certificate_records (
-                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem, key_algorithm, key_size, key_curve
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             "#,
             params![
                 record.id,
@@ -310,6 +337,9 @@ impl InventoryStore {
                 serde_json::to_string(&record.tags)?,
                 record.managed_key_ref,
                 record.chain_pem,
+                key_algorithm_to_db(&record.key_algorithm),
+                record.key_size,
+                key_curve_to_db(&record.key_curve),
             ],
         )?;
         Ok(())
@@ -343,6 +373,9 @@ impl InventoryStore {
         let tags_raw: String = row.get(10)?;
         let managed_key_ref: Option<String> = row.get(11).unwrap_or(None);
         let chain_pem: Option<String> = row.get(12).unwrap_or(None);
+        let key_algorithm_raw: Option<String> = row.get(13).unwrap_or(None);
+        let key_size: Option<u16> = row.get(14).unwrap_or(None);
+        let key_curve_raw: Option<String> = row.get(15).unwrap_or(None);
 
         let source = match source_raw.as_str() {
             "External" => CertificateSource::External,
@@ -373,6 +406,9 @@ impl InventoryStore {
             tags: serde_json::from_str(&tags_raw).context("failed to deserialize tags")?,
             managed_key_ref,
             chain_pem,
+            key_algorithm: parse_key_algorithm(key_algorithm_raw)?,
+            key_size,
+            key_curve: parse_key_curve(key_curve_raw)?,
         })
     }
 
@@ -390,5 +426,41 @@ impl InventoryStore {
         self.conn
             .lock()
             .map_err(|err| anyhow!("SQLite connection poisoned: {err}"))
+    }
+}
+
+fn key_algorithm_to_db(value: &Option<KeyAlgorithm>) -> Option<String> {
+    value.as_ref().map(|alg| match alg {
+        KeyAlgorithm::Rsa => "rsa".to_string(),
+        KeyAlgorithm::Ecdsa => "ecdsa".to_string(),
+    })
+}
+
+fn key_curve_to_db(value: &Option<KeyCurve>) -> Option<String> {
+    value.as_ref().map(|curve| match curve {
+        KeyCurve::P256 => "p256".to_string(),
+        KeyCurve::P384 => "p384".to_string(),
+    })
+}
+
+fn parse_key_algorithm(raw: Option<String>) -> Result<Option<KeyAlgorithm>> {
+    match raw {
+        None => Ok(None),
+        Some(value) => match value.as_str() {
+            "rsa" => Ok(Some(KeyAlgorithm::Rsa)),
+            "ecdsa" => Ok(Some(KeyAlgorithm::Ecdsa)),
+            _ => Err(anyhow!("Unknown key algorithm: {}", value)),
+        },
+    }
+}
+
+fn parse_key_curve(raw: Option<String>) -> Result<Option<KeyCurve>> {
+    match raw {
+        None => Ok(None),
+        Some(value) => match value.as_str() {
+            "p256" => Ok(Some(KeyCurve::P256)),
+            "p384" => Ok(Some(KeyCurve::P384)),
+            _ => Err(anyhow!("Unknown key curve: {}", value)),
+        },
     }
 }

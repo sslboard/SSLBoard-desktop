@@ -22,6 +22,9 @@ pub async fn start_managed_issuance(
         start_managed_dns01(
             start_req.domains,
             start_req.issuer_id,
+            start_req.key_algorithm,
+            start_req.key_size,
+            start_req.key_curve,
             &issuer_store,
             &dns_store,
             &secrets,
