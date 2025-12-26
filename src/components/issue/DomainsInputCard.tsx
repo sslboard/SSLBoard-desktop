@@ -48,8 +48,9 @@ export function DomainsInputCard({
           </div>
           <h2 className="text-xl font-bold text-foreground">Issue a certificate</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Enter the domains/SANs, start issuance to get TXT instructions, confirm propagation,
-            then finalize. Private keys stay in the OS keychain.
+            Enter the domains/SANs, then start issuance. We will verify DNS and finalize
+            automatically, pausing only if manual TXT records are required. Private keys stay in
+            the OS keychain.
           </p>
         </div>
         <div className="hidden rounded-lg border bg-muted px-3 py-2 text-xs text-muted-foreground sm:block">
@@ -107,7 +108,7 @@ export function DomainsInputCard({
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={() => void onStart()}
-            disabled={loadingStart || !parsedDomains.length || !issuerReady}
+            disabled={loadingStart || hasStartResult || !parsedDomains.length || !issuerReady}
           >
             {loadingStart && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Start issuance

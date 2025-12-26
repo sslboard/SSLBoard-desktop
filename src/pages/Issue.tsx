@@ -10,6 +10,7 @@ import { IssuerSelectionCard } from "../components/issue/IssuerSelectionCard";
 import { DomainsInputCard } from "../components/issue/DomainsInputCard";
 import { DnsInstructionsPanel } from "../components/issue/DnsInstructionsPanel";
 import { IssuanceResultBanner } from "../components/issue/IssuanceResultBanner";
+import { CompletedCertificateCard } from "../components/issue/CompletedCertificateCard";
 import type { IssuanceKeyOption } from "../lib/issuance";
 
 export function IssuePage() {
@@ -38,15 +39,18 @@ export function IssuePage() {
     checking,
     finalizing,
     error,
-    successMessage,
-    allFound,
+    certificate,
     manualRecords,
     hasManual,
     hasManaged,
     dnsModeLabel,
+    awaitingManual,
+    dnsFailed,
+    finalizeFailed,
     handleStart,
-    checkAll,
-    finalizeIssuance,
+    continueIssuance,
+    retryDnsVerification,
+    retryFinalization,
     reset,
   } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, keyOption);
 
@@ -125,7 +129,7 @@ export function IssuePage() {
         onReset={handleReset}
       />
 
-      <IssuanceResultBanner error={error} successMessage={successMessage} />
+      <IssuanceResultBanner error={error} successMessage={null} />
 
       {startResult && (
         <DnsInstructionsPanel
@@ -135,12 +139,18 @@ export function IssuePage() {
           dnsModeLabel={dnsModeLabel}
           manualRecords={manualRecords}
           checking={checking}
-          allFound={allFound}
           finalizing={finalizing}
-          onCheckAll={checkAll}
-          onFinalize={finalizeIssuance}
+          awaitingManual={awaitingManual}
+          dnsFailed={dnsFailed}
+          finalizeFailed={finalizeFailed}
+          hasCertificate={Boolean(certificate)}
+          onContinue={continueIssuance}
+          onRetryDns={retryDnsVerification}
+          onRetryFinalize={retryFinalization}
         />
       )}
+
+      {certificate && <CompletedCertificateCard certificate={certificate} />}
     </div>
   );
 }
