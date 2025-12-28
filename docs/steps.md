@@ -120,17 +120,17 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ---
 
-### 6) Export for managed certificates (PEM first; PFX later if you want) [Not started]
+### 6) Export for managed certificates (PEM first; PFX later if you want) [Done]
 
 **Goal:** distribution pattern #1 from your functional doc is real.
 
-* **UI** [Not started]
+* **UI** [Done]
 
   * “Export…” action on a managed cert:
 
     * PEM bundle options (cert, chain, fullchain)
     * include private key checkbox (disabled for CSR-imported keys you don’t have)
-* **Rust** [Not started]
+* **Rust** [Done]
 
   * `distribution/export.rs`:
 
@@ -141,7 +141,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
     * warn before exporting private keys
     * optional “require user presence” gate later (macOS Touch ID, if you choose)
 
-**Done when:** exported files work with nginx/traefik/caddy locally. [Not met]
+**Done when:** exported files work with nginx/traefik/caddy locally. [Met]
 
 ---
 
@@ -151,11 +151,11 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 * **UI** [Not started]
 
-  * “Discover certificates for domain” screen:
+  * "Discover certificates for domain" screen:
 
     * input: apex domain
     * shows list of certs found in CT
-    * user can “Add to inventory”
+    * user can "Add to inventory"
 * **Rust** [Not started]
 
   * Client for sslboard.com CT query API.
@@ -172,9 +172,9 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 * **UI** [Not started]
 
-  * “Renew” action with a clear plan preview:
+  * "Renew" action with a clear plan preview:
 
-    * External cert: “We will re-issue using these names + issuer settings; private key behavior: new key unless CSR provided.”
+    * External cert: "We will re-issue using these names + issuer settings; private key behavior: new key unless CSR provided."
     * Managed cert: choose
 
       * reuse existing key (preferred)
