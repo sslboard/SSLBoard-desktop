@@ -4,6 +4,8 @@
 
 A secure desktop application for issuing, managing, and distributing SSL/TLS certificates. SSLBoard keeps sensitive secrets (DNS API credentials, CA private keys, ACME account keys) securely stored on your local machine, ensuring they never leave your device.
 
+![SSLBoard Desktop](docs/SSLBoard-desktop-1280.jpg)
+
 ## What is SSLBoard Desktop?
 
 SSLBoard Desktop is an open-source tool designed for developers and DevOps teams to handle certificate lifecycle management with a focus on security and simplicity. It supports both public and private certificate issuance, with robust distribution options and a local-first approach to trust boundaries.
@@ -39,6 +41,7 @@ SSLBoard uses a two-domain architecture for security:
 - **Core Layer (Rust/Tauri)**: Manages issuance, secret storage, distribution, and audit logging. All privileged operations occur here.
 
 Modules under `src-tauri/src`:
+
 - `core/`: IPC commands, DTOs, error handling
 - `secrets/`: OS keychain adapters for secure storage
 - `issuance/`: ACME drivers, DNS providers, private PKI
@@ -49,11 +52,13 @@ Modules under `src-tauri/src`:
 ## Installation
 
 ### Prerequisites
+
 - Node.js (v18+)
 - Rust (latest stable)
 - Tauri CLI: `npm install -g @tauri-apps/cli`
 
 ### Build from Source
+
 1. Clone the repository:
    ```bash
    git clone https://github.com/your-org/sslboard-desktop.git
@@ -92,6 +97,7 @@ We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) 
 - **Code Style**: Rust code follows `rust-code-quality/spec.md`; UI follows `ui-code-quality/spec.md`.
 
 ### Development Setup
+
 - Run linting: `npm run lint`
 - Run tests: `npm run test` (if available)
 - Check type safety: `npm run typecheck`
