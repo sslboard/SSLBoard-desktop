@@ -46,14 +46,13 @@ This is the simplest and most reliable approach.
 
 ## Option 2: GitHub Actions (Best for CI/CD) ✅ Already Configured
 
-A GitHub Actions workflow is already set up at `.github/workflows/build.yml`. This approach builds Windows binaries automatically on every push, pull request, or release.
+A GitHub Actions workflow is already set up at `.github/workflows/build.yml`. This approach builds Windows binaries automatically when you push a version tag.
 
 ### How It Works
 
 The workflow automatically:
-- **Builds on pushes** to `main`/`master` branches and pull requests (for CI/testing)
-- **Creates releases** when you push a tag starting with `v` (e.g., `v0.6.4`) or create a GitHub release
-- **Attaches Windows installers** to the release automatically
+- **Builds and creates releases** when you push a tag starting with `v` (e.g., `v0.6.4`)
+- **Attaches Windows installers** (MSI and NSIS) to the release automatically
 
 ### Creating a Release
 
