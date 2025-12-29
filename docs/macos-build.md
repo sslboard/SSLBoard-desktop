@@ -205,7 +205,7 @@ For production builds that users can run without warnings, you need:
 
 ### Setting Up GitHub Actions
 
-The build workflow supports code signing when secrets are configured:
+The build workflow supports code signing and notarization when secrets are configured:
 
 1. **Add GitHub Secrets** (Settings → Secrets and variables → Actions):
 
@@ -229,11 +229,17 @@ The build workflow supports code signing when secrets are configured:
    
    - `KEYCHAIN_PASSWORD`: Temporary password for the build keychain (can be any random string)
 
-2. **Build will automatically:**
-   - Import the certificate
-   - Sign the app
-   - Submit for notarization (if configured)
-   - Create a release with the signed app
+2. **The workflow automatically:**
+   - Validates all required secrets are present
+   - Creates a temporary keychain and imports the certificate
+   - Builds and code-signs the app using `tauri-action`
+   - Creates a GitHub release with the signed app/DMG
+   - **Separately notarizes** both the `.app` bundle (if present) and the `.dmg` file
+   - Staples the notarization tickets to both the app and DMG
+   - Uploads the notarized DMG to the GitHub release
+   - Cleans up the temporary keychain
+
+**Note:** The `tauri-action` handles code signing during the build, but notarization is performed in a separate step after the build completes. This ensures both the app bundle and DMG are properly notarized before distribution.
 
 ### Local Build with Code Signing
 
@@ -265,12 +271,38 @@ If building locally:
    ```
 
 5. **Notarize (after build):**
+
+   For the `.app` bundle (create ZIP first):
    ```bash
-   xcrun notarytool submit SSLBoard.app \
+   # Create ZIP for notarization
+   cd src-tauri/target/release/bundle/macos
+   ditto -c -k --keepParent SSLBoard.app SSLBoard.zip
+   
+   # Submit for notarization
+   xcrun notarytool submit SSLBoard.zip \
      --apple-id your@email.com \
      --team-id TEAM_ID \
      --password "app-specific-password" \
      --wait
+   
+   # Staple the ticket
+   xcrun stapler staple SSLBoard.app
+   xcrun stapler validate SSLBoard.app
+   rm SSLBoard.zip
+   ```
+
+   For the `.dmg` file:
+   ```bash
+   cd src-tauri/target/release/bundle/dmg
+   xcrun notarytool submit SSLBoard_*.dmg \
+     --apple-id your@email.com \
+     --team-id TEAM_ID \
+     --password "app-specific-password" \
+     --wait
+   
+   # Staple the ticket
+   xcrun stapler staple SSLBoard_*.dmg
+   xcrun stapler validate SSLBoard_*.dmg
    ```
 
 ### Troubleshooting
@@ -327,9 +359,14 @@ When you run `npm run tauri build`, Tauri will generate:
   - Standalone application bundle
   - Can be distributed directly or packaged in a DMG
 
-- **`.dmg`**: `src-tauri/target/release/bundle/dmg/SSLBoard_<version>_x64.dmg`
+- **`.dmg`**: `src-tauri/target/release/bundle/dmg/SSLBoard_<version>_<arch>.dmg`
   - Disk image for distribution
   - Recommended for user-friendly installation
+
+**Notes on architecture:**
+
+- **GitHub Actions (`macos-latest`)**: Builds for the runner's host architecture. Today that is typically **Apple Silicon (arm64)**, so release artifacts are usually arm64 unless the workflow is updated to build additional targets.
+- **Local builds**: Default to your Mac's architecture (arm64 on Apple Silicon; x64 on Intel) unless you explicitly build for another target/universal.
 
 ## Distribution Without Code Signing
 

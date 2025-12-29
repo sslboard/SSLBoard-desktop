@@ -9,7 +9,6 @@ on:
 jobs:
   build-windows:
     name: Build Windows
-    if: false  # Temporarily disabled
     runs-on: windows-latest
     permissions:
       contents: write
@@ -76,6 +75,26 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
+      
+      - name: Debug build outputs
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host "Checking for build outputs..."
+          Write-Host "Working directory: $(Get-Location)"
+          Write-Host ""
+          Write-Host "Contents of src-tauri/target/release/bundle:"
+          if (Test-Path "src-tauri/target/release/bundle") {
+            Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse | Format-Table -AutoSize
+          } else {
+            Write-Host "Directory does not exist"
+          }
+          Write-Host ""
+          Write-Host "Searching for .msi files:"
+          Get-ChildItem -Path "src-tauri/target/release" -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+          Write-Host ""
+          Write-Host "Searching for .exe files:"
+          Get-ChildItem -Path "src-tauri/target/release" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
 
   build-macos:
     name: Build macOS

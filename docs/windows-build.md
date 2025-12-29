@@ -8,8 +8,9 @@ This is the simplest and most reliable approach.
 
 ### Prerequisites on Windows
 
-1. **Node.js** (v18+)
+1. **Node.js** (v22+)
    - Download from [nodejs.org](https://nodejs.org/)
+   - The GitHub Actions workflow uses Node.js 22
 
 2. **Rust**
    - Install from [rustup.rs](https://rustup.rs/)
@@ -19,7 +20,11 @@ This is the simplest and most reliable approach.
    - Download from [Microsoft](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
    - Or install Visual Studio with the "Desktop development with C++" workload
 
-4. **WebView2 Runtime** (usually pre-installed on Windows 10/11)
+4. **OpenSSL** (required for Rust dependencies)
+   - The project uses OpenSSL, which can be installed via vcpkg (see below)
+   - On Windows, vcpkg is the recommended method
+
+5. **WebView2 Runtime** (usually pre-installed on Windows 10/11)
    - Tauri uses WebView2, which comes with Windows 10/11
    - For older systems, download from [Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/)
 
@@ -30,12 +35,36 @@ This is the simplest and most reliable approach.
    cd desktop
    ```
 
-2. Install dependencies:
+2. **Set up OpenSSL via vcpkg** (if not already set up):
+   
+   The project requires OpenSSL for Rust dependencies. The recommended approach is using vcpkg:
+   
+   ```powershell
+   # Clone vcpkg (if not already present)
+   git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+   C:\vcpkg\bootstrap-vcpkg.bat
+   
+   # Install OpenSSL
+   C:\vcpkg\vcpkg install openssl:x64-windows-static-md
+   
+   # Set environment variables (add to your shell profile for persistence)
+   $env:VCPKG_ROOT = "C:\vcpkg"
+   $installed = "C:\vcpkg\installed\x64-windows-static-md"
+   $env:OPENSSL_DIR = $installed
+   $env:OPENSSL_LIB_DIR = "$installed\lib"
+   $env:OPENSSL_INCLUDE_DIR = "$installed\include"
+   ```
+   
+   **Note:** For a one-time build, you can set these environment variables in the current PowerShell session. For repeated builds, add them to your user environment variables in Windows Settings.
+
+3. Install dependencies:
    ```bash
    npm install
+   # Or for CI/reproducible builds:
+   npm ci
    ```
 
-3. Build for Windows:
+4. Build for Windows:
    ```bash
    npm run tauri build
    ```
@@ -84,6 +113,15 @@ Alternatively, you can manually create a release on GitHub, and the workflow wil
 ### Manual Workflow Trigger
 
 You can also trigger the workflow manually from the GitHub Actions tab in your repository using the "workflow_dispatch" event.
+
+### Workflow Details
+
+The GitHub Actions workflow for Windows:
+
+- Uses Node.js 22
+- Automatically sets up vcpkg and installs OpenSSL (with caching for faster builds)
+- Uses `npm ci` for reproducible dependency installation
+- Builds using `tauri-action`, which automatically creates a GitHub release and attaches the MSI installer
 
 ## Option 3: Cross-Compilation from macOS (Advanced)
 
@@ -146,6 +184,11 @@ You can add a custom build script or use Tauri's build hooks to sign the install
 - Install Visual Studio Build Tools with C++ workload
 - Or set up proper linker paths for cross-compilation
 
+### "Cannot find OpenSSL" or OpenSSL-related errors
+- Ensure vcpkg is installed and OpenSSL is installed via vcpkg
+- Verify environment variables (`OPENSSL_DIR`, `OPENSSL_LIB_DIR`, `OPENSSL_INCLUDE_DIR`, `VCPKG_ROOT`) are set correctly
+- Try reinstalling OpenSSL: `C:\vcpkg\vcpkg install openssl:x64-windows-static-md --recurse`
+
 ### "WebView2 not found"
 - Ensure WebView2 Runtime is installed on the target Windows machine
 - It comes pre-installed on Windows 10/11
@@ -154,4 +197,5 @@ You can add a custom build script or use Tauri's build hooks to sign the install
 - First build will compile all Rust dependencies (can take 10-30 minutes)
 - Subsequent builds are much faster due to caching
 - Consider using `cargo build --release` for testing before full Tauri build
+- The GitHub Actions workflow caches vcpkg packages to speed up builds
 
