@@ -31,6 +31,9 @@ acme-lib = "0.9"  # Latest stable: 0.9.1
 sha2 = "0.10"
 hex = "0.4"
 
+# OpenSSL - use vendored feature to statically link (required for code signing on macOS)
+openssl = { version = "0.10", features = ["vendored"] }
+
 # PKI / Certificate operations
 rcgen = "0.13"  # Certificate and CSR generation
 x509-parser = "0.18"  # X.509 certificate parsing
