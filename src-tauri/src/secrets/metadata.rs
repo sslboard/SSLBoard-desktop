@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Row};
 use tauri::{AppHandle, Manager};
 
 #[cfg(windows)]
-extern "system" {
+unsafe extern "system" {
     fn SetFileAttributesW(path: *const u16, attributes: u32) -> i32;
 }
 
