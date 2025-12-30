@@ -9,7 +9,7 @@ import {
   type DnsProviderRecord,
   type DnsProviderTestResult,
 } from "../lib/dns-providers";
-import { normalizeError } from "../lib/errors";
+import { maybeToastVaultUnlockError, normalizeError } from "../lib/errors";
 import { useDnsProviderTokenTest } from "./useDnsProviderTokenTest";
 
 export type ProviderFormState = CreateDnsProviderRequest & { provider_id?: string };
@@ -53,7 +53,9 @@ export function useDnsProviderManager() {
       const records = await listDnsProviders();
       setProviders(records);
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
     } finally {
       setLoading(false);
     }
@@ -123,7 +125,9 @@ export function useDnsProviderManager() {
       }
       resetForm();
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
     } finally {
       setSaving(false);
     }
@@ -136,7 +140,9 @@ export function useDnsProviderManager() {
       await deleteDnsProvider(providerId);
       setProviders((prev) => prev.filter((entry) => entry.id !== providerId));
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
     }
   }
 
@@ -147,12 +153,14 @@ export function useDnsProviderManager() {
       const result = await testDnsProvider(providerId);
       setTestResults((prev) => ({ ...prev, [providerId]: result }));
     } catch (err) {
+      const message = normalizeError(err);
+      maybeToastVaultUnlockError(message);
       setTestResults((prev) => ({
         ...prev,
         [providerId]: {
           success: false,
           elapsed_ms: 0,
-          error: normalizeError(err),
+          error: message,
         },
       }));
     } finally {

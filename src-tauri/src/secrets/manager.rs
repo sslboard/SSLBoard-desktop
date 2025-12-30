@@ -213,6 +213,7 @@ impl SecretManager {
         }
     }
 
+    /// Auto-unlocks the vault on demand when secrets are accessed.
     fn ensure_unlocked(&self) -> Result<(), SecretError> {
         if self.vault.is_unlocked() {
             return Ok(());

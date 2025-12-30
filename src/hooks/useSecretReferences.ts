@@ -8,7 +8,7 @@ import {
   type SecretRefRecord,
   type UpdateSecretRequest,
 } from "../lib/secrets";
-import { normalizeError } from "../lib/errors";
+import { maybeToastVaultUnlockError, normalizeError } from "../lib/errors";
 
 export function useSecretReferences() {
   const [secrets, setSecrets] = useState<SecretRefRecord[]>([]);
@@ -28,7 +28,9 @@ export function useSecretReferences() {
       const records = await listSecretRefs();
       setSecrets(records);
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
     } finally {
       setLoading(false);
     }
@@ -42,7 +44,9 @@ export function useSecretReferences() {
       setSecrets((prev) => [created, ...prev]);
       return created;
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
       return null;
     } finally {
       setSaving(false);
@@ -56,7 +60,9 @@ export function useSecretReferences() {
       setSecrets((prev) => prev.filter((s) => s.id !== id));
       return true;
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
       return false;
     }
   }
@@ -71,7 +77,9 @@ export function useSecretReferences() {
       );
       return updated;
     } catch (err) {
-      setError(normalizeError(err));
+      const message = normalizeError(err);
+      setError(message);
+      maybeToastVaultUnlockError(message);
       return null;
     } finally {
       setRotating(false);

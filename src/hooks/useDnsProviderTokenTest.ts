@@ -4,7 +4,7 @@ import {
   type DnsProviderTokenValidationResult,
   type ValidateDnsProviderTokenRequest,
 } from "../lib/dns-providers";
-import { normalizeError } from "../lib/errors";
+import { maybeToastVaultUnlockError, normalizeError } from "../lib/errors";
 import type { ProviderFormState } from "./useDnsProviderManager";
 
 export function useDnsProviderTokenTest() {
@@ -25,9 +25,11 @@ export function useDnsProviderTokenTest() {
       const result = await validateDnsProviderToken(payload);
       setTokenTestResult(result);
     } catch (err) {
+      const message = normalizeError(err);
+      maybeToastVaultUnlockError(message);
       setTokenTestResult({
         success: false,
-        error: normalizeError(err),
+        error: message,
       });
     } finally {
       setTokenTestLoading(false);
@@ -47,4 +49,3 @@ export function useDnsProviderTokenTest() {
     clearTokenTestResult,
   };
 }
-

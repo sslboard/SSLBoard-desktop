@@ -1,41 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { isVaultUnlocked, lockVault, unlockVault } from "../lib/secrets";
+import { lockVault } from "../lib/secrets";
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 export function useVaultControls() {
-  const [vaultUnlocked, setVaultUnlocked] = useState<boolean | null>(null);
+  const [vaultUnlocked, setVaultUnlocked] = useState<boolean>(false);
   const [vaultBusy, setVaultBusy] = useState(false);
   const idleTimer = useRef<number | null>(null);
+  const blurTimer = useRef<number | null>(null);
   const vaultUnlockedRef = useRef(false);
   const lastActivityRef = useRef<number>(Date.now());
-
-  useEffect(() => {
-    let cancelled = false;
-    const boot = async () => {
-      setVaultBusy(true);
-      try {
-        const status = await isVaultUnlocked();
-        if (!cancelled) {
-          setVaultUnlocked(status);
-        }
-      } catch (err) {
-        console.error("Failed to check vault status on startup", err);
-        if (!cancelled) {
-          setVaultUnlocked(false);
-        }
-      } finally {
-        if (!cancelled) {
-          setVaultBusy(false);
-        }
-      }
-    };
-    void boot();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const unlistenPromise = listen<{ unlocked: boolean }>(
@@ -60,6 +35,9 @@ export function useVaultControls() {
   };
 
   const scheduleIdleCheck = () => {
+    if (!vaultUnlockedRef.current) {
+      return;
+    }
     if (idleTimer.current !== null) {
       return;
     }
@@ -83,17 +61,34 @@ export function useVaultControls() {
       lastActivityRef.current = Date.now();
       scheduleIdleCheck();
     } else {
-      idleTimer.current = null;
+      if (idleTimer.current !== null) {
+        window.clearTimeout(idleTimer.current);
+        idleTimer.current = null;
+      }
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
     }
   }, [vaultUnlocked]);
 
   useEffect(() => {
     const handleActivity = () => {
       lastActivityRef.current = Date.now();
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
       scheduleIdleCheck();
     };
     const handleBlurOrHide = () => {
-      void lockIfActive();
+      if (blurTimer.current !== null) {
+        return;
+      }
+      blurTimer.current = window.setTimeout(() => {
+        blurTimer.current = null;
+        void lockIfActive();
+      }, 10_000);
     };
     const handleVisibility = () => {
       if (document.hidden) {
@@ -106,6 +101,9 @@ export function useVaultControls() {
     window.addEventListener("mousemove", handleActivity);
     window.addEventListener("keydown", handleActivity);
     window.addEventListener("click", handleActivity);
+    window.addEventListener("wheel", handleActivity, { passive: true });
+    window.addEventListener("touchstart", handleActivity, { passive: true });
+    window.addEventListener("pointerdown", handleActivity);
     window.addEventListener("focus", handleActivity);
     window.addEventListener("blur", handleBlurOrHide);
     document.addEventListener("visibilitychange", handleVisibility);
@@ -114,25 +112,31 @@ export function useVaultControls() {
       window.removeEventListener("mousemove", handleActivity);
       window.removeEventListener("keydown", handleActivity);
       window.removeEventListener("click", handleActivity);
+      window.removeEventListener("wheel", handleActivity);
+      window.removeEventListener("touchstart", handleActivity);
+      window.removeEventListener("pointerdown", handleActivity);
       window.removeEventListener("focus", handleActivity);
       window.removeEventListener("blur", handleBlurOrHide);
       document.removeEventListener("visibilitychange", handleVisibility);
+      if (idleTimer.current !== null) {
+        window.clearTimeout(idleTimer.current);
+        idleTimer.current = null;
+      }
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
     };
   }, []);
 
-  const toggleVault = async () => {
-    if (vaultBusy) return;
+  const lockVaultNow = async () => {
+    if (vaultBusy || !vaultUnlockedRef.current) return;
     setVaultBusy(true);
     try {
-      if (vaultUnlocked) {
-        const status = await lockVault();
-        setVaultUnlocked(status);
-      } else {
-        const status = await unlockVault();
-        setVaultUnlocked(status);
-      }
+      const status = await lockVault();
+      setVaultUnlocked(status);
     } catch (err) {
-      console.error("Vault toggle failed", err);
+      console.error("Vault lock failed", err);
     } finally {
       setVaultBusy(false);
     }
@@ -141,6 +145,6 @@ export function useVaultControls() {
   return {
     vaultUnlocked,
     vaultBusy,
-    toggleVault,
+    lockVault: lockVaultNow,
   };
 }

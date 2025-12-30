@@ -243,6 +243,10 @@ Use a storage interface:
 
 Keys and tokens are stored and retrieved only by Rust.
 
+### Vault lock/unlock behavior
+
+The secrets vault auto-unlocks on demand when secret access is required. The UI does not provide a manual unlock action; it can only trigger an explicit lock, which zeroizes the in-memory master key. Vault state changes are broadcast to the UI for status display.
+
 ### Touch ID / user presence gating (macOS)
 
 For high-sensitivity keys (private CA root/intermediate), add an access policy layer:
@@ -462,4 +466,3 @@ This architecture:
 * Separates issuance from distribution
 * Supports gradual expansion into automation and fleet distribution
 * Maintains a strong security narrative compatible with SSL/TLS tooling and compliance expectations
-

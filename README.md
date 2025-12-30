@@ -25,6 +25,7 @@ SSLBoard Desktop is an open-source tool designed for developers and DevOps teams
 
 - **Local Trust Boundary**: All sensitive operations occur on-device; no secrets are sent to external services.
 - **Human-in-the-Loop**: Explicit user consent required for sensitive actions like private key export.
+- **Vault Behavior**: The vault auto-unlocks when secrets are needed (with OS authentication if required); users can manually lock the vault at any time.
 - **Separation of Concerns**: Issuance, distribution, and visibility are modular and configurable.
 - **Opinionated Simplicity**: Tailored for small-to-medium teams; not a full enterprise PKI engine.
 
@@ -124,4 +125,3 @@ Note: While the core is open-source, future paid features (e.g., SSLBoard Cloud 
 5. Certificate inventory and audit logging
 
 For upcoming features, check `openspec/changes/`.
-

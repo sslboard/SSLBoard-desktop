@@ -59,23 +59,6 @@ pub async fn delete_secret_ref(
         .map_err(|err| err.to_string())
 }
 
-/// Unlocks the secret vault, loading the master key into memory.
-#[tauri::command]
-pub async fn unlock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {
-    debug!(
-        "[vault-cmd] unlock_vault called, is_unlocked={}",
-        manager.is_unlocked()
-    );
-    let manager = manager.inner().clone();
-    let result = spawn_blocking(move || manager.unlock())
-        .await
-        .map_err(|err| format!("Unlock vault join error: {err}"))?
-        .map(|_| true)
-        .map_err(|err| err.to_string());
-    debug!("[vault-cmd] unlock_vault result={:?}", result);
-    result
-}
-
 /// Locks the secret vault, zeroizing the cached master key.
 #[tauri::command]
 pub async fn lock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {

@@ -28,5 +28,5 @@ pub use misc::greet;
 pub use preferences::{get_preference, set_preference};
 pub use secrets::{
     create_secret_ref, delete_secret_ref, is_vault_unlocked, list_secret_refs, lock_vault,
-    unlock_vault, update_secret_ref,
+    update_secret_ref,
 };

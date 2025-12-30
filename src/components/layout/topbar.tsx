@@ -1,4 +1,4 @@
-import { Lock, LockOpen, Loader2 } from "lucide-react";
+import { Lock, Loader2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { Logo } from "../logo";
@@ -7,23 +7,18 @@ import type { NavItem } from "./sidebar";
 
 type TopbarProps = {
   navItems: NavItem[];
-  vaultUnlocked: boolean | null;
+  vaultUnlocked: boolean;
   vaultBusy: boolean;
-  onToggleVault: () => void;
+  onLockVault: () => void;
 };
 
 export function Topbar({
   navItems,
   vaultUnlocked,
   vaultBusy,
-  onToggleVault,
+  onLockVault,
 }: TopbarProps) {
-  const vaultLabel =
-    vaultUnlocked === null
-      ? "Vault status unknown"
-      : vaultUnlocked
-        ? "Vault unlocked"
-        : "Vault locked";
+  const vaultLabel = vaultUnlocked ? "Vault unlocked" : "Vault locked";
 
   return (
     <header className="sticky top-0 z-30 w-full border-b bg-card/95 px-4 backdrop-blur">
@@ -55,23 +50,32 @@ export function Topbar({
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onToggleVault}
-          disabled={vaultBusy}
-          className="hidden items-center gap-2 sm:inline-flex"
-        >
-          {vaultBusy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : vaultUnlocked ? (
-            <LockOpen className="h-4 w-4 text-emerald-500" />
-          ) : (
-            <Lock className="h-4 w-4 text-amber-500" />
-          )}
-          <span className="font-medium text-foreground">{vaultLabel}</span>
-        </Button>
-      </div>
+          <div className="hidden items-center gap-2 sm:flex">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full",
+                vaultUnlocked ? "bg-emerald-500" : "bg-amber-500",
+              )}
+            />
+            <span>{vaultLabel}</span>
+          </div>
+          {vaultUnlocked ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onLockVault}
+              disabled={vaultBusy}
+              className="hidden items-center gap-2 sm:inline-flex"
+            >
+              {vaultBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Lock className="h-4 w-4 text-amber-500" />
+              )}
+              <span className="font-medium text-foreground">Lock vault</span>
+            </Button>
+          ) : null}
+        </div>
       </div>
     </header>
   );
