@@ -14,6 +14,14 @@ use security_framework::access_control::{SecAccessControl, ProtectionMode};
 use security_framework_sys::access_control::{
     kSecAccessControlBiometryAny, kSecAccessControlOr, kSecAccessControlDevicePasscode
 };
+use security_framework_sys::keychain_item::SecItemAdd;
+use security_framework_sys::item::{kSecClass, kSecClassGenericPassword};
+use security_framework_sys::base::errSecSuccess;
+use core_foundation::base::{CFType, TCFType};
+use core_foundation::dictionary::CFMutableDictionary;
+use core_foundation::string::CFString;
+use core_foundation::data::CFData;
+use core_foundation_sys::base::OSStatus;
 use keyring::Entry;
 
 use super::{store::SecretStoreError, MasterKeyStoreTrait};
@@ -114,10 +122,12 @@ impl BiometricKeyringStore {
         let encoded = general_purpose::STANDARD.encode(&key_bytes);
         debug!("[biometric] create: encoded key for storage ({} chars)", encoded.len());
 
-        // Use standard keyring for storage
-        // Biometric protection will be added in production with entitlements
-        debug!("[biometric] create: storing in standard keyring...");
-        self.store_standard_keychain(&encoded)?;
+        // Try biometric storage first, fall back to standard keyring
+        debug!("[biometric] create: attempting biometric storage...");
+        if let Err(err) = self.store_biometric_secret(&encoded) {
+            debug!("[biometric] biometric storage failed ({}), falling back to standard keyring", err);
+            self.store_standard_keychain(&encoded)?;
+        }
         debug!("[biometric] create: storage completed successfully");
 
         debug!("[biometric] create: biometric keychain storage complete");
@@ -126,12 +136,75 @@ impl BiometricKeyringStore {
 
     /// Store a secret in the biometric-protected macOS Keychain.
     ///
-    /// In development: uses standard keyring
-    /// In production with entitlements: will use biometric-protected keychain
+    /// Tries biometric access control first, falls back to standard keyring if unavailable.
     fn store_biometric_secret(&self, secret: &str) -> Result<(), SecretStoreError> {
-        // For now, use standard keyring
-        // Biometric protection will be added in production builds
-        self.store_standard_keychain(secret)
+        debug!("[biometric] attempting biometric-protected storage...");
+
+        // Try to create biometric access control
+        match Self::create_biometric_access_control() {
+            Ok(access_control) => {
+                debug!("[biometric] biometric access control available, using protected storage");
+                self.store_with_biometric_access_control(secret, access_control)
+            }
+            Err(err) => {
+                debug!("[biometric] biometric access control failed ({}), using standard keyring", err);
+                Err(err) // Return error so caller can fall back to standard storage
+            }
+        }
+    }
+
+    /// Store with biometric access control (production mode with entitlements)
+    fn store_with_biometric_access_control(&self, secret: &str, access_control: SecAccessControl) -> Result<(), SecretStoreError> {
+        debug!("[biometric] storing with biometric access control (production mode)");
+
+        // Build the keychain item dictionary with biometric protection
+        let mut dict = CFMutableDictionary::new();
+
+        unsafe {
+            // Set class to generic password
+            dict.set(
+                CFType::wrap_under_get_rule(kSecClass as *const _),
+                CFType::wrap_under_get_rule(kSecClassGenericPassword as *const _),
+            );
+
+            // Set service
+            dict.set(
+                CFString::new("svce").as_CFType(),
+                CFString::new(&self.service).as_CFType(),
+            );
+
+            // Set account
+            dict.set(
+                CFString::new("acct").as_CFType(),
+                CFString::new(&self.account).as_CFType(),
+            );
+
+            // Set data
+            dict.set(
+                CFString::new("v_Data").as_CFType(),
+                CFData::from_buffer(secret.as_bytes()).as_CFType(),
+            );
+
+            // Set biometric access control
+            dict.set(
+                CFString::new("accc").as_CFType(),
+                access_control.as_CFType(),
+            );
+        }
+
+        // Add to keychain
+        debug!("[biometric] calling SecItemAdd with biometric access control...");
+        let status: OSStatus = unsafe {
+            SecItemAdd(dict.as_concrete_TypeRef(), std::ptr::null_mut())
+        };
+        debug!("[biometric] SecItemAdd returned status: {} (0x{:x})", status, status as u32);
+
+        if status == errSecSuccess {
+            debug!("[biometric] secret stored successfully with biometric protection");
+            Ok(())
+        } else {
+            Err(SecretStoreError::Store(format!("Biometric keychain storage failed with status: {} (0x{:x})", status, status as u32)))
+        }
     }
 
     /// Store in standard keychain without biometric protection
