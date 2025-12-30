@@ -42,6 +42,14 @@ The system SHALL automatically configure biometric access control for sensitive 
 - **AND** display appropriate user prompts when accessing the secret
 
 #### Scenario: Biometric authentication required for secret access
-- **WHEN** retrieving a biometric-protected secret on macOS
-- **THEN** the system SHALL prompt for Touch ID or Face ID authentication
-- **AND** fail gracefully if authentication is denied or unavailable
+- **WHEN** an operation requires a biometric-protected secret on macOS and the vault is locked
+- **THEN** the system SHALL automatically unlock the vault by accessing the master key from Keychain
+- **AND** macOS SHALL prompt for Touch ID or Face ID authentication when accessing the Keychain item
+- **AND** after successful authentication, the vault SHALL be unlocked and the operation SHALL proceed
+- **AND** the system SHALL fail gracefully if authentication is denied or unavailable
+
+#### Scenario: Biometric prompt appears on-demand during operations
+- **WHEN** a user performs an operation requiring secrets (e.g., issue certificate) and the vault is locked
+- **THEN** the system SHALL automatically trigger vault unlock
+- **AND** macOS SHALL display the biometric prompt automatically (no explicit unlock button needed)
+- **AND** the operation SHALL proceed after successful biometric authentication

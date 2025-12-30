@@ -108,7 +108,12 @@ impl SecretManager {
             .map_err(|err| SecretError::Metadata(err.to_string()))?;
 
         if let Err(err) = self.store_secret(&record.id, &secret_bytes) {
-            let _ = self.metadata.delete(&record.id);
+            if let Err(delete_err) = self.metadata.delete(&record.id) {
+                warn!(
+                    "[secrets] failed to rollback metadata for {}: {}",
+                    record.id, delete_err
+                );
+            }
             return Err(err);
         }
 
@@ -251,7 +256,12 @@ impl SecretManager {
                             "[secrets] removing orphaned metadata row without keyring entry: {}",
                             record.id
                         );
-                        let _ = self.metadata.delete(&record.id);
+                        if let Err(delete_err) = self.metadata.delete(&record.id) {
+                            warn!(
+                                "[secrets] failed to delete orphaned metadata row {}: {}",
+                                record.id, delete_err
+                            );
+                        }
                     }
                     Err(err) => {
                         return Err(anyhow!(

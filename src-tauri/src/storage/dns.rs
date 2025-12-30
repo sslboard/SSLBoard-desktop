@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
+use log::warn;
 use rusqlite::{params, Connection, OpenFlags, Row};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -323,12 +324,26 @@ impl DnsConfigStore {
                 continue;
             }
 
-            let created_at = DateTime::parse_from_rfc3339(&created_at_raw)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now());
-            let updated_at = DateTime::parse_from_rfc3339(&updated_at_raw)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now());
+            let created_at = match DateTime::parse_from_rfc3339(&created_at_raw) {
+                Ok(dt) => dt.with_timezone(&Utc),
+                Err(err) => {
+                    warn!(
+                        "[dns] failed to parse legacy created_at for adapter {}: {} (raw={})",
+                        adapter_id, err, created_at_raw
+                    );
+                    Utc::now()
+                }
+            };
+            let updated_at = match DateTime::parse_from_rfc3339(&updated_at_raw) {
+                Ok(dt) => dt.with_timezone(&Utc),
+                Err(err) => {
+                    warn!(
+                        "[dns] failed to parse legacy updated_at for adapter {}: {} (raw={})",
+                        adapter_id, err, updated_at_raw
+                    );
+                    Utc::now()
+                }
+            };
 
             let entry = groups
                 .entry((adapter_id.clone(), secret_ref.clone()))
@@ -355,10 +370,21 @@ impl DnsConfigStore {
                 format!("Migrated {} ({})", legacy.adapter_id, index + 1)
             };
 
-            let config_json = legacy
-                .zone_override
-                .map(|zone| serde_json::json!({ "zone": zone }))
-                .and_then(|value| serde_json::to_string(&value).ok());
+            let config_json = if let Some(zone) = legacy.zone_override {
+                let value = serde_json::json!({ "zone": zone });
+                match serde_json::to_string(&value) {
+                    Ok(raw) => Some(raw),
+                    Err(err) => {
+                        warn!(
+                            "[dns] failed to serialize legacy zone override for adapter {}: {}",
+                            legacy.adapter_id, err
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
 
             let suffixes_json =
                 serde_json::to_string(&suffixes).context("failed to serialize suffixes")?;
@@ -409,39 +435,84 @@ impl DnsConfigStore {
     }
 
     fn row_to_provider(row: &Row<'_>) -> Result<DnsProvider> {
+        let id: String = row.get(0)?;
+        let provider_type: String = row.get(1)?;
+        let label: String = row.get(2)?;
+        let domain_suffixes_raw: String = row.get(3)?;
+        let secret_ref_raw: Option<String> = row.get(4)?;
+        let config_json: Option<String> = row.get(5)?;
         let created_at_raw: String = row.get(6)?;
         let updated_at_raw: String = row.get(7)?;
-        let domain_suffixes_raw: String = row.get(3)?;
-        let domain_suffixes: Vec<String> =
-            serde_json::from_str(&domain_suffixes_raw).unwrap_or_default();
+
+        let domain_suffixes: Vec<String> = match serde_json::from_str(&domain_suffixes_raw) {
+            Ok(suffixes) => suffixes,
+            Err(err) => {
+                warn!(
+                    "[dns] failed to parse domain_suffixes for provider {}: {}",
+                    id, err
+                );
+                return Err(anyhow!(
+                    "failed to parse domain_suffixes for provider {id}: {err}"
+                ));
+            }
+        };
 
         // Deserialize secret_refs from JSON array, with backward compatibility for old single secret_ref values
-        let secret_refs: Vec<String> = match row.get::<_, Option<String>>(4)? {
+        let secret_refs: Vec<String> = match secret_ref_raw {
             Some(ref raw) => {
-                // Try to parse as JSON array first
-                if let Ok(refs) = serde_json::from_str::<Vec<String>>(raw) {
-                    refs
+                let trimmed = raw.trim_start();
+                if trimmed.starts_with('[') {
+                    match serde_json::from_str::<Vec<String>>(raw) {
+                        Ok(refs) => refs,
+                        Err(err) => {
+                            warn!(
+                                "[dns] failed to parse secret_ref list for provider {}: {}",
+                                id, err
+                            );
+                            vec![raw.clone()]
+                        }
+                    }
                 } else {
-                    // Backward compatibility: if it's not JSON, treat as single secret_ref
                     vec![raw.clone()]
                 }
             }
             None => Vec::new(),
         };
 
+        let created_at = match chrono::DateTime::parse_from_rfc3339(&created_at_raw) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(err) => {
+                warn!(
+                    "[dns] failed to parse created_at for provider {}: {} (raw={})",
+                    id, err, created_at_raw
+                );
+                return Err(anyhow!(
+                    "failed to parse created_at for provider {id}: {err}"
+                ));
+            }
+        };
+        let updated_at = match chrono::DateTime::parse_from_rfc3339(&updated_at_raw) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(err) => {
+                warn!(
+                    "[dns] failed to parse updated_at for provider {}: {} (raw={})",
+                    id, err, updated_at_raw
+                );
+                return Err(anyhow!(
+                    "failed to parse updated_at for provider {id}: {err}"
+                ));
+            }
+        };
+
         Ok(DnsProvider {
-            id: row.get(0)?,
-            provider_type: row.get(1)?,
-            label: row.get(2)?,
+            id,
+            provider_type,
+            label,
             domain_suffixes,
             secret_refs,
-            config_json: row.get(5)?,
-            created_at: chrono::DateTime::parse_from_rfc3339(&created_at_raw)
-                .map(|dt| dt.with_timezone(&Utc))
-                .context("failed to parse created_at")?,
-            updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at_raw)
-                .map(|dt| dt.with_timezone(&Utc))
-                .context("failed to parse updated_at")?,
+            config_json,
+            created_at,
+            updated_at,
         })
     }
 

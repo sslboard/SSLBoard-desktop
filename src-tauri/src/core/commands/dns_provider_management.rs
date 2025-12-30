@@ -1,3 +1,4 @@
+use log::warn;
 use tauri::{async_runtime::spawn_blocking, State};
 
 use crate::core::types::{
@@ -178,10 +179,19 @@ pub async fn dns_resolve_provider(
 
 pub(crate) fn provider_record_to_dto(record: DnsProvider) -> DnsProviderDto {
     let provider_type = provider_type_from_string(&record.provider_type);
-    let config = record
-        .config_json
-        .as_ref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok());
+    let config = match record.config_json.as_ref() {
+        Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                warn!(
+                    "[dns] invalid provider config_json for {}: {}",
+                    record.id, err
+                );
+                None
+            }
+        },
+        None => None,
+    };
     DnsProviderDto {
         id: record.id,
         provider_type,

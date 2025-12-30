@@ -2,7 +2,7 @@
 
 ## Why
 
-Users want the smooth Touch ID/Face ID experience when accessing sensitive certificate secrets, but the current cross-platform keyring approach doesn't provide biometric protection on macOS. Adding biometric access control to macOS Keychain items will enhance security while maintaining the seamless user experience that macOS users expect.
+Users want the smooth Touch ID/Face ID experience when accessing sensitive certificate secrets, but the current cross-platform keyring approach doesn't provide biometric protection on macOS. Adding biometric access control to macOS Keychain items will enhance security while maintaining the seamless user experience that macOS users expect. This change works in conjunction with backend-driven vault unlocking, where biometric prompts appear automatically when secrets are accessed, providing a natural macOS-like authentication flow.
 
 ## What Changes
 
@@ -22,3 +22,5 @@ Users want the smooth Touch ID/Face ID experience when accessing sensitive certi
   - `src-tauri/src/secrets/mod.rs` - Export new biometric store
 
 This change is macOS-specific and maintains backward compatibility - existing secrets continue to work, new secrets on macOS get biometric protection automatically.
+
+**Dependencies**: This change works best with `update-vault-unlock-workflow` which implements backend-driven unlocking. With that workflow, biometric prompts appear automatically when secrets are accessed, providing a natural macOS-like experience.

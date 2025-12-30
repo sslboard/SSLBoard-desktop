@@ -2,6 +2,8 @@
 
 The current secret storage uses the `keyring` crate for cross-platform OS credential storage. On macOS, this provides basic Keychain integration but doesn't leverage Apple's biometric authentication features (Touch ID/Face ID). Users want the smooth biometric experience when accessing sensitive certificate secrets.
 
+This change assumes backend-driven vault unlocking (see `update-vault-unlock-workflow`). With that workflow, biometric prompts appear automatically when operations require secrets, rather than requiring explicit unlock actions. This provides a natural macOS-like experience where authentication happens on-demand.
+
 ## Goals / Non-Goals
 
 - Goals:
@@ -29,6 +31,11 @@ The current secret storage uses the `keyring` crate for cross-platform OS creden
 - Decision: Automatic biometric enrollment for new secrets on macOS
   - Why: Provides consistent security without user configuration burden
   - Alternative considered: Optional biometric setting (adds UX complexity)
+
+- Decision: Biometric prompts appear on secret access, not on explicit unlock
+  - Why: Aligns with backend-driven unlock workflow where vault unlocks automatically when secrets are needed
+  - Why: Provides natural macOS-like experience where authentication happens on-demand
+  - Alternative considered: Prompt on explicit unlock button (creates double-prompt UX issue)
 
 ## Risks / Trade-offs
 

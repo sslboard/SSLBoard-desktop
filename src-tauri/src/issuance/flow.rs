@@ -293,30 +293,45 @@ pub fn complete_managed_dns01(
     inventory.insert_certificate(&record)?;
 
     // Best-effort check the key still resolves
-    let _ = secrets.resolve_secret(&managed_key_ref);
+    if let Err(err) = secrets.resolve_secret(&managed_key_ref) {
+        log::warn!(
+            "[issuance] managed key ref {} failed to resolve after issuance: {}",
+            managed_key_ref,
+            err
+        );
+    }
 
     // Clean up DNS challenge records after successful issuance
     for (domain, record_name) in dns_records_to_cleanup {
-        if let Ok(resolution) = dns_store.resolve_provider_for_domain(&domain) {
-            if let Some(provider) = resolution.provider.as_ref() {
-                if resolution.ambiguous.len() <= 1 {
-                    let provider_adapter = adapter_for_provider(provider, secrets);
-                    if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
-                        // Log but don't fail issuance if cleanup fails
-                        log::warn!(
-                            "[dns] Failed to cleanup TXT record {} for domain {}: {}",
-                            record_name,
-                            domain,
-                            err
-                        );
-                    } else {
-                        log::debug!(
-                            "[dns] Successfully cleaned up TXT record {} for domain {}",
-                            record_name,
-                            domain
-                        );
+        match dns_store.resolve_provider_for_domain(&domain) {
+            Ok(resolution) => {
+                if let Some(provider) = resolution.provider.as_ref() {
+                    if resolution.ambiguous.len() <= 1 {
+                        let provider_adapter = adapter_for_provider(provider, secrets);
+                        if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
+                            // Log but don't fail issuance if cleanup fails
+                            log::warn!(
+                                "[dns] Failed to cleanup TXT record {} for domain {}: {}",
+                                record_name,
+                                domain,
+                                err
+                            );
+                        } else {
+                            log::debug!(
+                                "[dns] Successfully cleaned up TXT record {} for domain {}",
+                                record_name,
+                                domain
+                            );
+                        }
                     }
                 }
+            }
+            Err(err) => {
+                log::warn!(
+                    "[dns] Failed to resolve provider for cleanup {}: {}",
+                    domain,
+                    err
+                );
             }
         }
     }
@@ -481,9 +496,18 @@ fn root_from_hostname(hostname: &str) -> String {
 }
 
 fn provider_zone_override(provider: &DnsProvider) -> Option<String> {
-    provider
-        .config_json
-        .as_ref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .and_then(|value| value.get("zone").and_then(|zone| zone.as_str().map(|s| s.to_string())))
+    let raw = provider.config_json.as_ref()?;
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(value) => value
+            .get("zone")
+            .and_then(|zone| zone.as_str().map(|s| s.to_string())),
+        Err(err) => {
+            log::warn!(
+                "[dns] invalid provider config_json for {}: {}",
+                provider.id,
+                err
+            );
+            None
+        }
+    }
 }

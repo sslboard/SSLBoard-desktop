@@ -1,3 +1,4 @@
+use log::warn;
 use tauri::{async_runtime::spawn_blocking, State};
 
 use crate::core::types::{
@@ -54,9 +55,17 @@ pub async fn check_dns_propagation(
 }
 
 fn provider_zone_override(provider: &DnsProvider) -> Option<String> {
-    provider
-        .config_json
-        .as_ref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .and_then(|value| value.get("zone").and_then(|zone| zone.as_str().map(|s| s.to_string())))
+    let raw = provider.config_json.as_ref()?;
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(value) => value
+            .get("zone")
+            .and_then(|zone| zone.as_str().map(|s| s.to_string())),
+        Err(err) => {
+            warn!(
+                "[dns] invalid provider config_json for {}: {}",
+                provider.id, err
+            );
+            None
+        }
+    }
 }
