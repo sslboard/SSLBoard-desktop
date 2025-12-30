@@ -6,11 +6,11 @@ use log::{error, info, warn};
 use uuid::Uuid;
 
 use super::{
-    keyring_store::MasterKeyStore,
     metadata::SecretMetadataStore,
     store::{EncryptedSecretStore, SecretStore, SecretStoreError},
     types::{SecretKind, SecretMetadata},
     vault::MasterKeyVault,
+    create_master_key_store,
 };
 use tauri::Emitter;
 use zeroize::Zeroizing;
@@ -54,7 +54,7 @@ pub struct SecretManager {
 impl SecretManager {
     pub fn initialize(app: tauri::AppHandle) -> Result<Self> {
         let metadata = SecretMetadataStore::initialize(app.clone())?;
-        let master_key_store = MasterKeyStore::new("sslboard-desktop");
+        let master_key_store = create_master_key_store("sslboard-desktop");
         let vault = Arc::new(MasterKeyVault::new(master_key_store));
         let encrypted_store: Arc<dyn SecretStore> =
             Arc::new(EncryptedSecretStore::new(metadata.clone(), vault.clone()));

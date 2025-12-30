@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for hardened runtime with keychain access -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+    <!-- Allow keychain access for biometric authentication -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>com.sslboard.desktop</string>
+    </array>
+</dict>
+</plist>

@@ -3,7 +3,7 @@ use log::{debug, warn};
 use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroizing;
 
-use super::store::SecretStoreError;
+use super::{MasterKeyStoreTrait, store::SecretStoreError};
 use keyring::Entry;
 
 /// Master key storage adapter using the OS keyring.
@@ -86,6 +86,12 @@ impl MasterKeyStore {
         debug!("[keyring] create: keyring access complete");
 
         Ok(Zeroizing::new(key_bytes))
+    }
+}
+
+impl MasterKeyStoreTrait for MasterKeyStore {
+    fn get_or_create(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
+        self.get_or_create()
     }
 }
 

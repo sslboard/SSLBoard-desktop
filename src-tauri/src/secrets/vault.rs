@@ -3,17 +3,16 @@ use std::sync::{Arc, PoisonError, RwLock};
 use zeroize::{Zeroize, Zeroizing};
 use log::debug;
 
-use super::{keyring_store::MasterKeyStore, store::SecretStoreError};
+use super::{store::SecretStoreError, MasterKeyStoreTrait};
 
 /// Caches the master key in memory and provides explicit lock/unlock control.
-#[derive(Clone)]
 pub struct MasterKeyVault {
-    store: MasterKeyStore,
+    store: Box<dyn MasterKeyStoreTrait>,
     cached: Arc<RwLock<Option<Zeroizing<Vec<u8>>>>>,
 }
 
 impl MasterKeyVault {
-    pub fn new(store: MasterKeyStore) -> Self {
+    pub fn new(store: Box<dyn MasterKeyStoreTrait>) -> Self {
         Self {
             store,
             cached: Arc::new(RwLock::new(None)),

@@ -57,7 +57,7 @@
       "frameworks": [],
       "minimumSystemVersion": "10.13",
       "exceptionDomain": "",
-      "entitlements": null
+      "entitlements": "Entitlements.plist"
     },
     "windows": {
       "certificateThumbprint": null,
