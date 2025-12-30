@@ -43,13 +43,6 @@ pkcs12 = "0.1"  # PFX/PKCS#12 export for Windows
 # Secret storage (OS keychain adapters)
 keyring = "2.3"  # Cross-platform: macOS Keychain, Windows Credential Vault, Linux Secret Service
 aes-gcm = "0.10"
-
-# macOS biometric Keychain support
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { version = "3.5", features = ["OSX_10_13"] }
-security-framework-sys = { version = "2.15", features = ["OSX_10_13"] }
-core-foundation = "0.10"
-core-foundation-sys = "0.8"
 rand = "0.8"
 base64 = "0.22"
 zeroize = "1.7"
@@ -88,6 +81,13 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # IDs for secret references
 uuid = { version = "1", features = ["v4", "fast-rng", "serde"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS biometric Keychain support
+security-framework = { version = "3.5", features = ["OSX_10_13"] }
+security-framework-sys = { version = "2.15", features = ["OSX_10_13"] }
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
 
 [features]
 integration-tests = []
