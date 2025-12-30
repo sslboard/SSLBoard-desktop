@@ -38,6 +38,9 @@ impl From<SecretStoreError> for SecretError {
             SecretStoreError::Unavailable(msg) => SecretError::Unavailable(msg),
             SecretStoreError::Store(msg) => SecretError::Store(msg),
             SecretStoreError::Locked(msg) => SecretError::Locked(msg),
+            SecretStoreError::MasterKeyMismatch => SecretError::Store(
+                "Master key mismatch - stored data was encrypted with a different key. This usually happens when switching storage methods. Clear all stored data and start fresh.".to_string()
+            ),
         }
     }
 }
@@ -226,6 +229,9 @@ impl SecretManager {
             SecretStoreError::NotFound(_) => SecretError::NotFound(id.to_string()),
             SecretStoreError::Store(msg) => SecretError::Store(msg),
             SecretStoreError::Locked(msg) => SecretError::Locked(msg),
+            SecretStoreError::MasterKeyMismatch => SecretError::Store(
+                "Master key mismatch - stored data was encrypted with a different key. This usually happens when switching storage methods. Clear all stored data and start fresh.".to_string()
+            ),
         }
     }
 

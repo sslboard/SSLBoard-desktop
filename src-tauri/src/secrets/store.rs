@@ -17,6 +17,8 @@ pub enum SecretStoreError {
     Store(String),
     #[error("secret vault is locked: {0}")]
     Locked(String),
+    #[error("master key mismatch - stored data was encrypted with a different key. This usually happens when switching storage methods. Clear all stored data and start fresh.")]
+    MasterKeyMismatch,
 }
 
 /// Abstraction for storing and retrieving secrets inside the trusted core.
@@ -83,7 +85,11 @@ impl SecretStore for EncryptedSecretStore {
             let nonce = Nonce::from_slice(nonce_bytes);
             cipher
                 .decrypt(nonce, data)
-                .map_err(|err| SecretStoreError::Store(err.to_string()))
+                .map_err(|_err| {
+                    // AEAD decryption failures almost always mean master key mismatch
+                    // (data was encrypted with a different key than we're trying to decrypt with)
+                    SecretStoreError::MasterKeyMismatch
+                })
         })
     }
 

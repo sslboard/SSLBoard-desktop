@@ -14,3 +14,10 @@ dev:
 
 build:
 	npm run tauri build
+
+run: 
+	RUST_LOG=debug ./src-tauri/target/release/bundle/macos/SSLBoard.app/Contents/MacOS/SSLBoard-desktop
+
+clean-data:
+	rm ~/Library/Application Support/com.sslboard.desktop/*.sqlite
+	security delete-generic-password -s "sslboard-desktop" -a "master_key"
