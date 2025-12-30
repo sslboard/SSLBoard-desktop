@@ -1,53 +1,10 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use log::{debug, warn};
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use zeroize::Zeroizing;
 
-use super::store::{SecretStore, SecretStoreError};
+use super::store::SecretStoreError;
 use keyring::Entry;
-
-/// Legacy OS-backed secret storage using the `keyring` crate (Keychain/Credential Manager/Secret Service).
-#[derive(Clone)]
-pub struct KeyringSecretStore {
-    service: String,
-}
-
-impl KeyringSecretStore {
-    pub fn new(service: impl Into<String>) -> Self {
-        Self {
-            service: service.into(),
-        }
-    }
-
-    fn entry(&self, id: &str) -> Result<keyring::Entry, SecretStoreError> {
-        Entry::new(&self.service, id).map_err(|err| map_error(id, err))
-    }
-}
-
-impl SecretStore for KeyringSecretStore {
-    fn store(&self, id: &str, value: &[u8]) -> Result<(), SecretStoreError> {
-        // Safety: value is sensitive; rely on OS keyring to store securely.
-        self.entry(id).and_then(|entry| {
-            entry
-                .set_password(&String::from_utf8_lossy(value))
-                .map_err(|err| map_error(id, err))
-        })
-    }
-
-    fn retrieve(&self, id: &str) -> Result<Vec<u8>, SecretStoreError> {
-        let secret = self
-            .entry(id)?
-            .get_password()
-            .map_err(|err| map_error(id, err))?;
-        Ok(secret.into_bytes())
-    }
-
-    fn delete(&self, id: &str) -> Result<(), SecretStoreError> {
-        self.entry(id)?
-            .delete_password()
-            .map_err(|err| map_error(id, err))
-    }
-}
 
 /// Master key storage adapter using the OS keyring.
 #[derive(Clone)]
@@ -66,20 +23,36 @@ impl MasterKeyStore {
 
     pub fn get_or_create(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
         debug!("[keyring] get_or_create called");
+        // Try to get existing key first (most common case - avoids unnecessary key generation)
         match self.get() {
             Ok(key) => {
                 debug!("[keyring] get_or_create: found existing key");
-                Ok(key)
+                return Ok(key);
             }
             Err(SecretStoreError::NotFound(_)) => {
+                // Key doesn't exist, will create below
                 debug!("[keyring] get_or_create: no key found, creating new");
-                self.create()
             }
             Err(err) => {
-                warn!("[keyring] get_or_create: error={}", err);
-                Err(err)
+                // If get() failed for a reason other than NotFound (e.g., keychain locked),
+                // we can't proceed. Return the error.
+                warn!("[keyring] get_or_create: error getting key: {}", err);
+                return Err(err);
             }
         }
+
+        // Key doesn't exist, create it.
+        // NOTE: On macOS, you may see TWO password prompts even when the master key exists:
+        // 1. One prompt when get() tries to read the keychain item
+        // 2. Another prompt from macOS keychain security (even though the item exists)
+        // This is a known macOS keychain behavior - macOS may prompt twice for the same
+        // operation (once for keychain unlock, once for item access). This cannot be
+        // avoided with the current keyring crate API. A future enhancement would use
+        // security_framework directly with biometric authentication (Touch ID/Face ID)
+        // to eliminate password prompts entirely.
+        let new_key = self.create()?;
+        debug!("[keyring] get_or_create: created new key successfully");
+        Ok(new_key)
     }
 
     pub fn get(&self) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {

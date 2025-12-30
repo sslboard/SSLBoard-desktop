@@ -10,7 +10,7 @@ check:
 	cargo check --manifest-path src-tauri/Cargo.toml
 
 dev:
-	npm run tauri dev
+	RUST_LOG=debug npm run tauri dev
 
 build:
-	npm run build
+	npm run tauri build

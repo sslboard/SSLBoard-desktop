@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::Utc;
 use log::{error, info, warn};
 use uuid::Uuid;
 
 use super::{
-    keyring_store::{KeyringSecretStore, MasterKeyStore},
+    keyring_store::MasterKeyStore,
     metadata::SecretMetadataStore,
     store::{EncryptedSecretStore, SecretStore, SecretStoreError},
     types::{SecretKind, SecretMetadata},
@@ -47,7 +47,6 @@ pub struct SecretManager {
     store: Arc<dyn SecretStore>,
     metadata: SecretMetadataStore,
     vault: Arc<MasterKeyVault>,
-    legacy_store: Arc<KeyringSecretStore>,
     app: tauri::AppHandle,
     prefix: String,
 }
@@ -59,20 +58,14 @@ impl SecretManager {
         let vault = Arc::new(MasterKeyVault::new(master_key_store));
         let encrypted_store: Arc<dyn SecretStore> =
             Arc::new(EncryptedSecretStore::new(metadata.clone(), vault.clone()));
-        let legacy_store = Arc::new(KeyringSecretStore::new("sslboard-desktop"));
 
-        let manager = Self {
+        Ok(Self {
             store: encrypted_store,
             metadata,
             vault,
-            legacy_store,
             app: app.clone(),
             prefix: "sec_".to_string(),
-        };
-
-        manager.migrate_legacy_secrets()?;
-
-        Ok(manager)
+        })
     }
 
     pub fn list(&self) -> Result<Vec<SecretMetadata>, SecretError> {
@@ -225,61 +218,6 @@ impl SecretManager {
         })?;
         self.emit_vault_state(true);
         Ok(())
-    }
-
-    fn migrate_legacy_secrets(&self) -> Result<()> {
-        if !self.metadata.has_missing_ciphertext()? {
-            return Ok(());
-        }
-
-        info!("[secrets] migrating legacy keyring secrets into encrypted store");
-
-        let migration = || -> Result<()> {
-            self.vault.unlock()?;
-            let records = self.metadata.list()?;
-            for record in records {
-                if self.metadata.has_ciphertext(&record.id)? {
-                    continue;
-                }
-                match self.legacy_store.retrieve(&record.id) {
-                    Ok(bytes) => {
-                        let secret = Zeroizing::new(bytes);
-                        self.store_secret(&record.id, &secret)?;
-                        if let Err(err) = self.legacy_store.delete(&record.id) {
-                            warn!(
-                                "[secrets] warning: failed to delete legacy keyring entry {}: {}",
-                                record.id, err
-                            );
-                        }
-                    }
-                    Err(SecretStoreError::NotFound(_)) => {
-                        warn!(
-                            "[secrets] removing orphaned metadata row without keyring entry: {}",
-                            record.id
-                        );
-                        if let Err(delete_err) = self.metadata.delete(&record.id) {
-                            warn!(
-                                "[secrets] failed to delete orphaned metadata row {}: {}",
-                                record.id, delete_err
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        return Err(anyhow!(
-                            "failed migrating secret {} from keyring: {}",
-                            record.id,
-                            err
-                        ))
-                    }
-                }
-            }
-            Ok(())
-        };
-
-        let result = migration();
-        self.vault.lock();
-        self.emit_vault_state(false);
-        result
     }
 
     fn map_store_error(&self, err: SecretStoreError, id: &str) -> SecretError {

@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Row};
+use rusqlite::{params, Connection, OpenFlags, Row};
 use tauri::{AppHandle, Manager};
 
 #[cfg(windows)]
@@ -148,28 +148,6 @@ impl SecretMetadataStore {
         }
 
         Ok(())
-    }
-
-    pub fn has_missing_ciphertext(&self) -> Result<bool> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT EXISTS(SELECT 1 FROM secret_metadata WHERE ciphertext IS NULL)
-            "#,
-        )?;
-        let exists: i64 = stmt.query_row([], |row| row.get(0))?;
-        Ok(exists == 1)
-    }
-
-    pub fn has_ciphertext(&self, id: &str) -> Result<bool> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT ciphertext IS NOT NULL FROM secret_metadata WHERE id = ?1
-            "#,
-        )?;
-        let present: Option<i64> = stmt.query_row(params![id], |row| row.get(0)).optional()?;
-        Ok(present.unwrap_or(0) == 1)
     }
 
     pub fn store_ciphertext(&self, id: &str, ciphertext: &[u8]) -> Result<()> {
