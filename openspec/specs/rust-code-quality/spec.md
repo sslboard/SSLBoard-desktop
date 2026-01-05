@@ -26,6 +26,22 @@ The codebase SHALL NOT use silent error handling patterns. All errors SHALL be p
 - **THEN** it SHALL be replaced with proper error handling
 - **AND** meaningful error messages SHALL be provided
 
+#### Scenario: Persisted data parsing failures are surfaced
+- **WHEN** parsing stored JSON fields or timestamps fails
+- **THEN** the error SHALL be logged with record identifiers and field names
+- **AND** the failure SHALL be propagated to callers or a documented fallback SHALL be applied
+- **AND** fallback behavior SHALL include a warning log entry
+
+#### Scenario: Best-effort cleanup failures are visible
+- **WHEN** a best-effort cleanup or rollback operation fails
+- **THEN** the error SHALL be logged with relevant identifiers
+- **AND** the primary operation SHALL continue unless the failure is safety-critical
+
+#### Scenario: Config decoding errors are not silent
+- **WHEN** parsing configuration blobs (e.g., provider overrides) fails
+- **THEN** the error SHALL be logged with provider identifiers
+- **AND** the system SHALL fall back to safe defaults without panicking
+
 ### Requirement: Consistent error handling patterns
 Error handling SHALL follow consistent patterns across the codebase using the `anyhow` crate and custom error types where appropriate.
 
