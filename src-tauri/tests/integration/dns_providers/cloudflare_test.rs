@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
 
-use sslboard_desktop_lib::issuance::dns_providers::{CloudflareAdapter, DnsProviderAdapter};
+use sslboard_desktop_lib::issuance::dns_providers::{
+    AtomicDnsOperations, CloudflareAdapter, DnsProviderAdapter,
+};
 
 use super::test_utils::{
     ensure_record_cleanup, expected_txt_content, list_txt_records, load_cloudflare_config,
@@ -171,6 +173,129 @@ fn cloudflare_error_rate_limit() -> Result<()> {
     if !message.to_lowercase().contains("rate limit") {
         return Err(anyhow!("Unexpected error for rate limit: {}", message));
     }
+
+    Ok(())
+}
+
+// Atomic operations tests
+
+#[test]
+fn cloudflare_atomic_create_one_record() -> Result<()> {
+    let config = load_cloudflare_config()?;
+    let name = record_name(&config.zone, "atomic-create");
+    let _cleanup = ensure_record_cleanup(config.clone(), &name)?;
+
+    let mut adapter = CloudflareAdapter::new(config.token.clone(), config.zone.clone());
+    let record_id = adapter.create_one_record(&name, "integration-test-atomic-create")?;
+
+    // Verify record was created
+    let records = list_txt_records(&config, &name)?;
+    let record = records
+        .iter()
+        .find(|r| r.id == record_id)
+        .ok_or_else(|| anyhow!("Created record not found"))?;
+
+    let expected = expected_txt_content("integration-test-atomic-create");
+    if record.content.as_deref() != Some(expected.as_str()) {
+        return Err(anyhow!(
+            "Expected TXT content {}, got {:?}",
+            expected,
+            record.content
+        ));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn cloudflare_atomic_delete_one_record() -> Result<()> {
+    let config = load_cloudflare_config()?;
+    let name = record_name(&config.zone, "atomic-delete");
+    let _cleanup = ensure_record_cleanup(config.clone(), &name)?;
+
+    // Create a record first
+    let mut adapter = CloudflareAdapter::new(config.token.clone(), config.zone.clone());
+    let record_id = adapter.create_one_record(&name, "integration-test-atomic-delete")?;
+
+    // Wait for record to be visible
+    let _record = wait_for_record_content(
+        &config,
+        &name,
+        &expected_txt_content("integration-test-atomic-delete"),
+    )?;
+
+    // Delete it using atomic operation
+    adapter.delete_one_record(&record_id)?;
+
+    // Verify it's gone
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let records = list_txt_records(&config, &name)?;
+    if records.iter().any(|r| r.id == record_id) {
+        return Err(anyhow!("Record was not deleted"));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn cloudflare_atomic_list_records() -> Result<()> {
+    let config = load_cloudflare_config()?;
+    let name = record_name(&config.zone, "atomic-list");
+    let _cleanup = ensure_record_cleanup(config.clone(), &name)?;
+
+    // Create a record first
+    let mut adapter = CloudflareAdapter::new(config.token.clone(), config.zone.clone());
+    let record_id = adapter.create_one_record(&name, "integration-test-atomic-list")?;
+
+    // Wait for record to be visible
+    let _record = wait_for_record_content(
+        &config,
+        &name,
+        &expected_txt_content("integration-test-atomic-list"),
+    )?;
+
+    // List records using atomic operation
+    let records = adapter.list_records(&name)?;
+    let found = records.iter().any(|r| r.id == record_id);
+    if !found {
+        return Err(anyhow!("Created record not found in list"));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn cloudflare_atomic_get_zone_id() -> Result<()> {
+    let config = load_cloudflare_config()?;
+    let mut adapter = CloudflareAdapter::new(config.token.clone(), config.zone.clone());
+
+    // Get zone ID using atomic operation
+    let zone_id = adapter.get_zone_id(&config.zone)?;
+
+    // Verify it's a valid zone ID (Cloudflare zone IDs are alphanumeric)
+    if zone_id.is_empty() {
+        return Err(anyhow!("Zone ID is empty"));
+    }
+
+    // Verify it's cached (second call should use cache)
+    let zone_id2 = adapter.get_zone_id(&config.zone)?;
+    if zone_id != zone_id2 {
+        return Err(anyhow!("Zone ID changed between calls (cache not working)"));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn cloudflare_atomic_normalize_value() -> Result<()> {
+    // This test doesn't require API access, just test the normalization logic
+    // Create adapter with dummy values since we only need the normalize_value method
+    let adapter = CloudflareAdapter::new("dummy-token".to_string(), "example.com".to_string());
+
+    // Test normalization removes quotes
+    assert_eq!(adapter.normalize_value("\"test\""), "test");
+    assert_eq!(adapter.normalize_value(" \"test\" "), "test");
+    assert_eq!(adapter.normalize_value("test"), "test");
 
     Ok(())
 }

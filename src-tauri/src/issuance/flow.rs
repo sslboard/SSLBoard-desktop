@@ -5,9 +5,8 @@ use std::{
 };
 
 use acme_lib::{
-    Certificate, Directory, DirectoryUrl, Error as AcmeError, create_p256_key, create_p384_key,
-    create_rsa_key,
-    order::{Auth, NewOrder},
+    Certificate, Error as AcmeError,
+    order::NewOrder,
     persist::{Persist, PersistKey, PersistKind},
 };
 use anyhow::{Result, anyhow};
@@ -18,16 +17,11 @@ use x509_parser::pem::parse_x509_pem;
 
 use crate::{
     core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve},
-    issuance::dns::{
-        DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter, PropagationState,
-    },
+    issuance::acme_workflow,
+    issuance::dns::{DnsRecordInstruction, ManualDnsAdapter, PropagationState},
     issuance::dns_providers::{adapter_for_provider, poll_dns_propagation},
     secrets::{manager::SecretManager, types::SecretKind},
-    storage::{
-        dns::{DnsConfigStore, DnsProvider},
-        inventory::InventoryStore,
-        issuer::IssuerConfigStore,
-    },
+    storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
 };
 
 /// In-memory persistence for acme-lib that avoids disk I/O and lets us seed the ACME account key.
@@ -95,19 +89,7 @@ pub fn start_managed_dns01(
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
 ) -> Result<(String, Vec<DnsRecordInstruction>)> {
-    if domains.is_empty() {
-        return Err(anyhow!("At least one domain is required"));
-    }
-    let mut normalized: Vec<String> = domains
-        .into_iter()
-        .map(|d| d.trim().trim_end_matches('.').to_lowercase())
-        .filter(|d| !d.is_empty())
-        .collect();
-    normalized.sort();
-    normalized.dedup();
-    if normalized.is_empty() {
-        return Err(anyhow!("No valid domains provided"));
-    }
+    let normalized = acme_workflow::validate_and_normalize_domains(domains)?;
 
     let issuer = issuer_store
         .get(&issuer_id)?
@@ -133,81 +115,22 @@ pub fn start_managed_dns01(
         .map_err(|_| anyhow!("Stored ACME account key is not valid UTF-8"))?;
 
     let (key_algorithm, key_size, key_curve) =
-        resolve_key_params(key_algorithm, key_size, key_curve)?;
+        acme_workflow::resolve_key_params(key_algorithm, key_size, key_curve)?;
 
-    let persist = EphemeralPersist::new();
-    persist.seed_account_key(&contact_email, account_key_pem.as_bytes())?;
+    let (_directory, account) =
+        acme_workflow::setup_acme_account(&issuer.directory_url, &contact_email, &account_key_pem)?;
 
-    let directory =
-        Directory::from_url(persist.clone(), DirectoryUrl::Other(&issuer.directory_url))
-            .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
-    let account = directory
-        .account_with_realm(
-            &contact_email,
-            Some(vec![format!("mailto:{}", contact_email)]),
-        )
-        .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
+    let new_order = acme_workflow::create_acme_order(&account, &normalized)?;
+
+    let (dns_records, _auths, dns_records_to_cleanup) =
+        acme_workflow::prepare_dns_challenges(&new_order, dns_store, secrets)?;
 
     let primary = normalized
         .get(0)
         .cloned()
         .ok_or_else(|| anyhow!("primary domain missing"))?;
-    let alt_names: Vec<&str> = normalized.iter().skip(1).map(|s| s.as_str()).collect();
-    let new_order = account
-        .new_order(&primary, &alt_names)
-        .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
-
-    let auths: Vec<Auth<EphemeralPersist>> = new_order
-        .authorizations()
-        .map_err(|e: acme_lib::Error| anyhow!(e.to_string()))?;
-
-    let mut dns_records = Vec::new();
-    let mut dns_records_to_cleanup = Vec::new();
-    let adapter = ManualDnsAdapter::new();
-    for auth in auths {
-        let dns = auth.dns_challenge();
-        let proof = dns.dns_proof();
-        let domain = auth.domain_name().to_string();
-
-        let resolution = dns_store.resolve_provider_for_domain(&domain)?;
-        let zone_override = resolution
-            .provider
-            .as_ref()
-            .and_then(provider_zone_override);
-        let request = DnsChallengeRequest {
-            domain: domain.clone(),
-            value: proof.clone(),
-            zone: zone_override,
-        };
-        let mut record = adapter.present_txt(&request)?;
-        if let Some(provider) = resolution.provider.as_ref() {
-            if resolution.ambiguous.len() <= 1 {
-                let provider_adapter = adapter_for_provider(provider, secrets);
-                provider_adapter.create_txt(&record.record_name, &record.value)?;
-                record.adapter = provider.provider_type.clone();
-                // Store for cleanup after successful issuance
-                dns_records_to_cleanup.push((domain.clone(), record.record_name.clone()));
-            }
-        }
-        dns_records.push(record);
-    }
-
-    let key = match key_algorithm {
-        KeyAlgorithm::Rsa => {
-            let size = key_size.unwrap_or(2048);
-            create_rsa_key(u32::from(size))
-        }
-        KeyAlgorithm::Ecdsa => match key_curve {
-            Some(KeyCurve::P256) => create_p256_key(),
-            Some(KeyCurve::P384) => create_p384_key(),
-            None => return Err(anyhow!("ECDSA key_curve is required")),
-        },
-    };
-    let key_pem = key
-        .private_key_to_pem_pkcs8()
-        .map_err(|e| anyhow!("failed to serialize private key: {e}"))?;
-    let key_pem_str = String::from_utf8(key_pem)
-        .map_err(|_| anyhow!("managed key PEM contained invalid UTF-8"))?;
+    let key_pem_str =
+        acme_workflow::generate_private_key(&key_algorithm, key_size, key_curve.as_ref())?;
     let key_label = format!(
         "Managed {} key for {}",
         format_key_label(&key_algorithm, key_size, key_curve.as_ref()),
@@ -449,44 +372,6 @@ fn build_record(
     })
 }
 
-fn resolve_key_params(
-    key_algorithm: Option<KeyAlgorithm>,
-    key_size: Option<u16>,
-    key_curve: Option<KeyCurve>,
-) -> Result<(KeyAlgorithm, Option<u16>, Option<KeyCurve>)> {
-    match key_algorithm {
-        None => {
-            if key_size.is_some() || key_curve.is_some() {
-                return Err(anyhow!(
-                    "Key parameters must include key_algorithm when size/curve is provided"
-                ));
-            }
-            Ok((KeyAlgorithm::Rsa, Some(2048), None))
-        }
-        Some(KeyAlgorithm::Rsa) => {
-            let size = key_size.ok_or_else(|| anyhow!("RSA key_size is required"))?;
-            if !matches!(size, 2048 | 3072 | 4096) {
-                return Err(anyhow!(
-                    "Unsupported RSA key size {size}. Allowed: 2048, 3072, 4096"
-                ));
-            }
-            if key_curve.is_some() {
-                return Err(anyhow!("RSA issuance does not accept key_curve"));
-            }
-            Ok((KeyAlgorithm::Rsa, Some(size), None))
-        }
-        Some(KeyAlgorithm::Ecdsa) => {
-            if key_size.is_some() {
-                return Err(anyhow!("ECDSA issuance does not accept key_size"));
-            }
-            let curve = key_curve.ok_or_else(|| anyhow!("ECDSA key_curve is required"))?;
-            match curve {
-                KeyCurve::P256 | KeyCurve::P384 => Ok((KeyAlgorithm::Ecdsa, None, Some(curve))),
-            }
-        }
-    }
-}
-
 fn format_key_label(
     key_algorithm: &KeyAlgorithm,
     key_size: Option<u16>,
@@ -507,11 +392,12 @@ fn format_key_label(
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyAlgorithm, KeyCurve, resolve_key_params};
+    use super::{KeyAlgorithm, KeyCurve};
+    use crate::issuance::acme_workflow;
 
     #[test]
     fn defaults_to_rsa_2048_when_missing() {
-        let (algo, size, curve) = resolve_key_params(None, None, None).unwrap();
+        let (algo, size, curve) = acme_workflow::resolve_key_params(None, None, None).unwrap();
         assert!(matches!(algo, KeyAlgorithm::Rsa));
         assert_eq!(size, Some(2048));
         assert!(curve.is_none());
@@ -520,7 +406,7 @@ mod tests {
     #[test]
     fn accepts_rsa_3072() {
         let (algo, size, curve) =
-            resolve_key_params(Some(KeyAlgorithm::Rsa), Some(3072), None).unwrap();
+            acme_workflow::resolve_key_params(Some(KeyAlgorithm::Rsa), Some(3072), None).unwrap();
         assert!(matches!(algo, KeyAlgorithm::Rsa));
         assert_eq!(size, Some(3072));
         assert!(curve.is_none());
@@ -528,8 +414,12 @@ mod tests {
 
     #[test]
     fn accepts_ecdsa_p384() {
-        let (algo, size, curve) =
-            resolve_key_params(Some(KeyAlgorithm::Ecdsa), None, Some(KeyCurve::P384)).unwrap();
+        let (algo, size, curve) = acme_workflow::resolve_key_params(
+            Some(KeyAlgorithm::Ecdsa),
+            None,
+            Some(KeyCurve::P384),
+        )
+        .unwrap();
         assert!(matches!(algo, KeyAlgorithm::Ecdsa));
         assert!(size.is_none());
         assert!(matches!(curve, Some(KeyCurve::P384)));
@@ -537,7 +427,8 @@ mod tests {
 
     #[test]
     fn rejects_invalid_size() {
-        let err = resolve_key_params(Some(KeyAlgorithm::Rsa), Some(1024), None).unwrap_err();
+        let err = acme_workflow::resolve_key_params(Some(KeyAlgorithm::Rsa), Some(1024), None)
+            .unwrap_err();
         assert!(err.to_string().contains("Unsupported RSA key size"));
     }
 }
@@ -548,22 +439,5 @@ fn root_from_hostname(hostname: &str) -> String {
         format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1])
     } else {
         hostname.to_string()
-    }
-}
-
-fn provider_zone_override(provider: &DnsProvider) -> Option<String> {
-    let raw = provider.config_json.as_ref()?;
-    match serde_json::from_str::<serde_json::Value>(raw) {
-        Ok(value) => value
-            .get("zone")
-            .and_then(|zone| zone.as_str().map(|s| s.to_string())),
-        Err(err) => {
-            log::warn!(
-                "[dns] invalid provider config_json for {}: {}",
-                provider.id,
-                err
-            );
-            None
-        }
     }
 }

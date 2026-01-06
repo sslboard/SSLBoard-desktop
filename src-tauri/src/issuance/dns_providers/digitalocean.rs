@@ -1,8 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
-use super::{http, retry_provider_verification, DnsProviderAdapter};
+use super::{
+    DnsProviderAdapter,
+    base::{AtomicDnsOperations, DnsProviderBase, DnsRecord},
+    http,
+};
 
 pub struct DigitalOceanAdapter {
     api_token: String,
@@ -101,31 +104,35 @@ impl DigitalOceanAdapter {
         Ok(list_result.domain_records)
     }
 
-    fn list_all_txt_records(&self) -> Result<Vec<DigitalOceanDnsRecordListItem>> {
+    fn fetch_record_data(&self, record_id: u64) -> Result<Option<String>> {
         let client = http::HttpClient::shared();
         let response = client
             .get(&format!(
-                "https://api.digitalocean.com/v2/domains/{}/records?type=TXT",
-                self.domain
+                "https://api.digitalocean.com/v2/domains/{}/records/{}",
+                self.domain, record_id
             ))
             .header("Authorization", format!("Bearer {}", self.api_token))
             .send()
-            .context("Failed to list DigitalOcean DNS records")?;
+            .context("Failed to fetch DigitalOcean DNS record")?;
 
+        if response.status() == 404 {
+            return Ok(None);
+        }
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().unwrap_or_default();
-            return Err(http::status_error("DigitalOcean", status, Some(body)));
+            let error_text = response.text().unwrap_or_default();
+            return Err(http::status_error("DigitalOcean", status, Some(error_text)));
         }
 
-        let list_result: DigitalOceanDnsRecordListResponse = response
+        let record: DigitalOceanDnsRecordDetailResponse = response
             .json()
-            .context("Failed to parse DigitalOcean DNS record list")?;
-
-        Ok(list_result.domain_records)
+            .context("Failed to parse DigitalOcean DNS record response")?;
+        Ok(record.domain_record.data)
     }
 
-    fn create_txt_record(&self, record_name: &str, value: &str) -> Result<u64> {
+    /// Atomic operation: Creates a single TXT record via DigitalOcean API.
+    /// Returns the record ID. Does not check for existing records or verify.
+    fn create_txt_record_atomic(&self, record_name: &str, value: &str) -> Result<u64> {
         let client = http::HttpClient::shared();
         let relative_name = self.to_relative_name(record_name);
 
@@ -160,163 +167,29 @@ impl DigitalOceanAdapter {
         Ok(result.domain_record.id)
     }
 
-    fn update_txt_record(&self, record_id: u64, record_name: &str, value: &str) -> Result<()> {
+    /// Atomic operation: Deletes a single TXT record by ID via DigitalOcean API.
+    /// Does not handle listing or retries - just a single DELETE call.
+    fn delete_txt_record_atomic(&self, record_id: u64) -> Result<()> {
         let client = http::HttpClient::shared();
-        let relative_name = self.to_relative_name(record_name);
-        let record = DigitalOceanDnsRecord {
-            record_type: "TXT".to_string(),
-            name: relative_name,
-            data: Self::format_txt_content(value),
-            ttl: 300,
-        };
-        let response = client
-            .put(&format!(
+        let delete_response = client
+            .delete(&format!(
                 "https://api.digitalocean.com/v2/domains/{}/records/{}",
                 self.domain, record_id
-            ))
-            .header("Authorization", format!("Bearer {}", self.api_token))
-            .header("Content-Type", "application/json")
-            .json(&record)
-            .send()
-            .context("Failed to update DigitalOcean DNS record")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().unwrap_or_default();
-            return Err(http::status_error("DigitalOcean", status, Some(error_text)));
-        }
-
-        Ok(())
-    }
-
-    fn fetch_record_data(&self, record_id: u64) -> Result<Option<String>> {
-        let client = http::HttpClient::shared();
-        let response = client
-            .get(&format!(
-                "https://api.digitalocean.com/v2/domains/{}/records/{}",
-                self.domain, record_id
-            ))
-            .header("Authorization", format!("Bearer {}", self.api_token))
-            .send()
-            .context("Failed to fetch DigitalOcean DNS record")?;
-
-        if response.status() == 404 {
-            return Ok(None);
-        }
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().unwrap_or_default();
-            return Err(http::status_error("DigitalOcean", status, Some(error_text)));
-        }
-
-        let record: DigitalOceanDnsRecordDetailResponse = response
-            .json()
-            .context("Failed to parse DigitalOcean DNS record response")?;
-        Ok(record.domain_record.data)
-    }
-
-    fn upsert_txt_record(&self, record_name: &str, value: &str) -> Result<()> {
-        let existing = self.list_txt_records(record_name)?;
-        let expected_normalized = Self::normalize_txt_content(value);
-        
-        // Check if any existing record already has the correct value
-        for record in &existing {
-            if let Some(data) = self.fetch_record_data(record.id)? {
-                if Self::normalize_txt_content(&data) == expected_normalized {
-                    // Record with correct value already exists, no need to create/update
-                    return Ok(());
-                }
-            }
-        }
-        
-        let mut record_ids = Vec::new();
-        if existing.is_empty() {
-            let record_id = self.create_txt_record(record_name, value)?;
-            record_ids.push(record_id);
-        } else {
-            for record in &existing {
-                self.update_txt_record(record.id, record_name, value)?;
-                record_ids.push(record.id);
-            }
-        }
-
-        // Verify the record was created/updated correctly using unified retry logic
-        let domain = self.domain.clone();
-        let api_token = self.api_token.clone();
-        let record_ids_clone = record_ids.clone();
-        let expected_normalized_clone = expected_normalized.clone();
-        
-        retry_provider_verification(
-            record_name,
-            "DigitalOcean record verification",
-            Duration::from_secs(3),
-            Duration::from_millis(500),
-            move || {
-                // Create a temporary adapter to fetch record data
-                let temp_adapter = DigitalOceanAdapter::new(api_token.clone(), domain.clone());
-                for record_id in &record_ids_clone {
-                    if let Ok(Some(data)) = temp_adapter.fetch_record_data(*record_id) {
-                        if Self::normalize_txt_content(&data) == expected_normalized_clone {
-                            return Ok(true);
-                        }
-                    }
-                }
-                Ok(false)
-            },
-        )
-    }
-
-    fn delete_txt_record(&self, record_name: &str) -> Result<()> {
-        let client = http::HttpClient::shared();
-
-        let relative_name = self.to_relative_name(record_name);
-        let mut record_ids: Vec<u64> = Vec::new();
-        for attempt in 0..4 {
-            let list_result = self.list_txt_records(record_name)?;
-            record_ids = list_result.iter().map(|record| record.id).collect();
-            if !record_ids.is_empty() {
-                break;
-            }
-            if attempt == 2 {
-                let list_result = self.list_all_txt_records()?;
-                record_ids = list_result
-                    .iter()
-                    .filter(|record| record.name == relative_name)
-                    .map(|record| record.id)
-                    .collect();
-                if !record_ids.is_empty() {
-                    break;
-                }
-            }
-            std::thread::sleep(Duration::from_millis(400));
-        }
-        if record_ids.is_empty() {
-            return Ok(());
-        }
-
-        for record_id in record_ids {
-            let delete_response = client
-                .delete(&format!(
-                    "https://api.digitalocean.com/v2/domains/{}/records/{}",
-                    self.domain, record_id
             ))
             .header("Authorization", format!("Bearer {}", self.api_token))
             .send()
             .context("Failed to delete DigitalOcean DNS record")?;
 
-            if !delete_response.status().is_success() {
-                if delete_response.status() == 404 {
-                    continue;
-                }
-                return Err(http::status_error(
-                    "DigitalOcean",
-                    delete_response.status(),
-                    None,
-                ));
-            }
+        if delete_response.status().is_success() || delete_response.status() == 404 {
+            // 404 is fine, record already gone
+            Ok(())
+        } else {
+            Err(http::status_error(
+                "DigitalOcean",
+                delete_response.status(),
+                None,
+            ))
         }
-
-        Ok(())
     }
 }
 
@@ -332,14 +205,68 @@ struct DigitalOceanDnsRecordListItem {
     name: String,
 }
 
+impl AtomicDnsOperations for DigitalOceanAdapter {
+    fn normalize_value(&self, value: &str) -> String {
+        // DigitalOcean uses normalize_txt_content logic
+        Self::normalize_txt_content(value)
+    }
+
+    fn create_one_record(&mut self, record_name: &str, value: &str) -> Result<String> {
+        // Truly atomic: just create the record
+        let record_id = self.create_txt_record_atomic(record_name, value)?;
+        Ok(record_id.to_string())
+    }
+
+    fn delete_one_record(&mut self, record_id: &str) -> Result<()> {
+        let record_id = record_id
+            .parse::<u64>()
+            .map_err(|_| anyhow!("Invalid record ID: {}", record_id))?;
+
+        // Truly atomic: just delete the record
+        self.delete_txt_record_atomic(record_id)
+    }
+
+    fn list_records(&mut self, record_name: &str) -> Result<Vec<DnsRecord>> {
+        let existing = self.list_txt_records(record_name)?;
+        let mut records = Vec::new();
+
+        for item in existing {
+            if let Ok(Some(data)) = self.fetch_record_data(item.id) {
+                records.push(DnsRecord {
+                    id: item.id.to_string(),
+                    name: item.name.clone(),
+                    value: data,
+                });
+            }
+        }
+
+        Ok(records)
+    }
+
+    fn get_zone_id(&mut self, _domain: &str) -> Result<String> {
+        // DigitalOcean uses domain name as the zone identifier
+        Ok(self.domain.clone())
+    }
+}
+
+impl DnsProviderBase for DigitalOceanAdapter {
+    fn atomic_ops(&mut self) -> &mut dyn AtomicDnsOperations {
+        self
+    }
+}
+
 impl DnsProviderAdapter for DigitalOceanAdapter {
     fn create_txt(&self, record_name: &str, value: &str) -> Result<()> {
-        self.upsert_txt_record(record_name, value)?;
+        // Use DnsProviderBase for backward compatibility
+        let mut adapter = DigitalOceanAdapter::new(self.api_token.clone(), self.domain.clone());
+        adapter.set_txt_record(record_name, value)?;
         Ok(())
     }
 
     fn cleanup_txt(&self, record_name: &str) -> Result<()> {
-        self.delete_txt_record(record_name)?;
+        // Use DnsProviderBase for backward compatibility
+        let mut adapter = DigitalOceanAdapter::new(self.api_token.clone(), self.domain.clone());
+        adapter.delete_txt_record(record_name)?;
         Ok(())
     }
 }

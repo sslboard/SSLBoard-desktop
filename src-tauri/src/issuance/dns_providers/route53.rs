@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 
-use super::{matches_zone, DnsProviderAdapter};
+use super::{
+    base::{AtomicDnsOperations, DnsProviderBase, DnsRecord},
+    matches_zone, DnsProviderAdapter,
+};
 
 pub struct Route53Adapter {
     access_key: String,
@@ -82,7 +85,10 @@ impl Route53Adapter {
         ))
     }
 
-    async fn create_txt_record(&mut self, record_name: &str, value: &str) -> Result<()> {
+    /// Atomic operation: Creates a single TXT record via Route53 API.
+    /// Returns the record name as ID (Route53 doesn't return a separate ID).
+    /// Does not check for existing records or verify.
+    async fn create_txt_record_atomic(&mut self, record_name: &str, value: &str) -> Result<String> {
         use aws_config::BehaviorVersion;
         use aws_sdk_route53::config::Credentials;
         use aws_sdk_route53::Client;
@@ -106,33 +112,10 @@ impl Route53Adapter {
 
         let client = Client::new(&config);
 
-        // Check if a TXT record with the correct value already exists
-        let list_response = client
-            .list_resource_record_sets()
-            .hosted_zone_id(&hosted_zone_id)
-            .send()
-            .await
-            .context("Failed to list Route 53 DNS records")?;
-
-        let sets = list_response.resource_record_sets();
-        if let Some(record_set) = sets.iter().find(|rs| {
-            rs.name() == record_name && rs.r#type() == &RrType::Txt
-        }) {
-            // Check if any resource record already has the correct value
-            let has_correct_value = record_set
-                .resource_records()
-                .iter()
-                .any(|record| record.value() == &formatted_value);
-            if has_correct_value {
-                // Record with correct value already exists, no need to create
-                return Ok(());
-            }
-        }
-
         let record_set = ResourceRecordSet::builder()
             .name(record_name)
             .set_resource_records(Some(vec![ResourceRecord::builder()
-                .value(formatted_value.clone())
+                .value(formatted_value)
                 .build()
                 .map_err(|e| anyhow!("Failed to build ResourceRecord: {}", e))?]))
             .ttl(300)
@@ -159,17 +142,17 @@ impl Route53Adapter {
             .await
             .context("Failed to create Route 53 DNS record")?;
 
-        self.verify_txt_record(&client, &hosted_zone_id, record_name, &formatted_value)
-            .await?;
-
-        Ok(())
+        // Route53 doesn't return a record ID, so we use the record name
+        Ok(format!("route53:{}", record_name))
     }
 
-    async fn delete_txt_record(&mut self, record_name: &str) -> Result<()> {
+    /// Atomic operation: Deletes a single TXT record via Route53 API.
+    /// Does not handle listing - expects the record_set to be provided.
+    async fn delete_txt_record_atomic(&mut self, record_set: aws_sdk_route53::types::ResourceRecordSet) -> Result<()> {
         use aws_config::BehaviorVersion;
         use aws_sdk_route53::config::Credentials;
         use aws_sdk_route53::Client;
-        use aws_sdk_route53::types::{Change, ChangeBatch, RrType};
+        use aws_sdk_route53::types::{Change, ChangeBatch};
 
         let hosted_zone_id = self.discover_hosted_zone_id().await?;
 
@@ -187,24 +170,6 @@ impl Route53Adapter {
             .await;
 
         let client = Client::new(&config);
-
-        // First, get the existing record to delete it
-        let list_response = client
-            .list_resource_record_sets()
-            .hosted_zone_id(&hosted_zone_id)
-            .send()
-            .await
-            .context("Failed to list Route 53 DNS records")?;
-
-        // resource_record_sets() returns &[ResourceRecordSet] directly (not Option)
-        let sets = list_response.resource_record_sets();
-        let record_set = sets
-            .iter()
-            .find(|rs| {
-                rs.name() == record_name && rs.r#type() == &RrType::Txt
-            })
-            .cloned()
-            .ok_or_else(|| anyhow!("TXT record not found: {}", record_name))?;
 
         let change = Change::builder()
             .action(aws_sdk_route53::types::ChangeAction::Delete)
@@ -228,61 +193,155 @@ impl Route53Adapter {
         Ok(())
     }
 
-    async fn verify_txt_record(
-        &self,
-        client: &aws_sdk_route53::Client,
-        hosted_zone_id: &str,
-        record_name: &str,
-        expected_value: &str,
-    ) -> Result<()> {
+}
+
+impl AtomicDnsOperations for Route53Adapter {
+    fn normalize_value(&self, value: &str) -> String {
+        // Route53 stores values with quotes, normalize by removing quotes and trimming
+        value.trim().trim_matches('"').trim().to_string()
+    }
+
+    fn create_one_record(&mut self, record_name: &str, value: &str) -> Result<String> {
+        // Truly atomic: just create the record
+        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        rt.block_on(self.create_txt_record_atomic(record_name, value))
+    }
+
+    fn delete_one_record(&mut self, record_id: &str) -> Result<()> {
+        // Extract record name from our ID format
+        let record_name = record_id
+            .strip_prefix("route53:")
+            .ok_or_else(|| anyhow!("Invalid Route53 record ID format"))?;
+        
+        // For Route53, we need to get the record_set first to delete it
+        // This is a limitation of Route53 API - deletion requires the full record_set
+        // So we need to list first, then delete
+        use aws_config::BehaviorVersion;
+        use aws_sdk_route53::config::Credentials;
+        use aws_sdk_route53::Client;
         use aws_sdk_route53::types::RrType;
 
-        let response = client
-            .list_resource_record_sets()
-            .hosted_zone_id(hosted_zone_id)
-            .send()
-            .await
-            .context("Failed to list Route 53 DNS records")?;
+        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        let hosted_zone_id = rt.block_on(self.discover_hosted_zone_id())?;
+        
+        let credentials = Credentials::new(
+            &self.access_key,
+            &self.secret_key,
+            None,
+            None,
+            "sslboard",
+        );
+
+        let config = rt.block_on(
+            aws_config::defaults(BehaviorVersion::latest())
+                .credentials_provider(credentials)
+                .load()
+        );
+
+        let client = Client::new(&config);
+
+        let response = rt.block_on(
+            client
+                .list_resource_record_sets()
+                .hosted_zone_id(&hosted_zone_id)
+                .send()
+        )
+        .context("Failed to list Route 53 DNS records")?;
 
         let record_set = response
             .resource_record_sets()
             .iter()
             .find(|rs| rs.name() == record_name && rs.r#type() == &RrType::Txt)
+            .cloned()
             .ok_or_else(|| anyhow!("TXT record not found: {}", record_name))?;
 
-        let matched = record_set
-            .resource_records()
-            .iter()
-            .any(|record| record.value() == expected_value);
-        if !matched {
-            return Err(anyhow!("Route 53 record verification failed"));
+        // Now delete using the record_set
+        rt.block_on(self.delete_txt_record_atomic(record_set))?;
+        Ok(())
+    }
+
+    fn list_records(&mut self, record_name: &str) -> Result<Vec<DnsRecord>> {
+        use aws_config::BehaviorVersion;
+        use aws_sdk_route53::config::Credentials;
+        use aws_sdk_route53::Client;
+        use aws_sdk_route53::types::RrType;
+
+        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        
+        let hosted_zone_id = rt.block_on(self.discover_hosted_zone_id())?;
+        
+        let credentials = Credentials::new(
+            &self.access_key,
+            &self.secret_key,
+            None,
+            None,
+            "sslboard",
+        );
+
+        let config = rt.block_on(
+            aws_config::defaults(BehaviorVersion::latest())
+                .credentials_provider(credentials)
+                .load()
+        );
+
+        let client = Client::new(&config);
+
+        let response = rt.block_on(
+            client
+                .list_resource_record_sets()
+                .hosted_zone_id(&hosted_zone_id)
+                .send()
+        )
+        .context("Failed to list Route 53 DNS records")?;
+
+        let mut records = Vec::new();
+        for record_set in response.resource_record_sets() {
+            if record_set.name() == record_name && record_set.r#type() == &RrType::Txt {
+                for record in record_set.resource_records() {
+                    records.push(DnsRecord {
+                        id: format!("route53:{}", record_name),
+                        name: record_name.to_string(),
+                        value: record.value().to_string(),
+                    });
+                }
+            }
         }
 
-        Ok(())
+        Ok(records)
+    }
+
+    fn get_zone_id(&mut self, _domain: &str) -> Result<String> {
+        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        rt.block_on(self.discover_hosted_zone_id())
+    }
+}
+
+impl DnsProviderBase for Route53Adapter {
+    fn atomic_ops(&mut self) -> &mut dyn AtomicDnsOperations {
+        self
     }
 }
 
 impl DnsProviderAdapter for Route53Adapter {
     fn create_txt(&self, record_name: &str, value: &str) -> Result<()> {
-        // Route 53 SDK is async, so we need to use tokio runtime
-        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        // Use DnsProviderBase for backward compatibility
         let mut adapter = Route53Adapter::new(
             self.access_key.clone(),
             self.secret_key.clone(),
             self.domain_suffix.clone(),
         );
-        rt.block_on(adapter.create_txt_record(record_name, value))?;
+        adapter.set_txt_record(record_name, value)?;
         Ok(())
     }
 
     fn cleanup_txt(&self, record_name: &str) -> Result<()> {
-        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        // Use DnsProviderBase for backward compatibility
         let mut adapter = Route53Adapter::new(
             self.access_key.clone(),
             self.secret_key.clone(),
             self.domain_suffix.clone(),
         );
-        rt.block_on(adapter.delete_txt_record(record_name))?;
+        adapter.delete_txt_record(record_name)?;
         Ok(())
     }
 }

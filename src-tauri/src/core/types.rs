@@ -181,8 +181,6 @@ pub struct DeleteIssuerRequest {
     pub issuer_id: String,
 }
 
-pub type PropagationDto = DnsPropagationResult;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DnsProviderType {

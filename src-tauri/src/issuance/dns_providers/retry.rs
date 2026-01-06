@@ -2,7 +2,8 @@ use anyhow::Result;
 use log::{debug, warn};
 use std::time::{Duration, Instant};
 
-use crate::issuance::dns::{check_txt_record, DnsPropagationResult, PropagationState};
+use crate::issuance::dns::{DnsPropagationResult, PropagationState};
+use crate::issuance::dns_providers::query_google_dns;
 
 /// Retries checking DNS propagation via public DNS (DoH) until the record is found
 /// or timeout is reached. This is used for both testing and issuance flows.
@@ -24,7 +25,7 @@ pub fn poll_dns_propagation(
             attempt, record_name
         );
 
-        let result = check_txt_record(record_name, expected_value)?;
+        let result = query_google_dns(record_name, expected_value)?;
 
         match result.state {
             PropagationState::Found => {

@@ -2,12 +2,16 @@ use anyhow::Result;
 
 use crate::{secrets::manager::SecretManager, storage::dns::DnsProvider};
 
+mod base;
 mod cloudflare;
 mod digitalocean;
 pub(crate) mod http;
 mod retry;
 mod route53;
+mod testing;
 
+pub use base::{AtomicDnsOperations, DnsProviderBase, DnsRecord};
+pub use testing::query_google_dns;
 pub use retry::{poll_dns_propagation, retry_provider_verification};
 
 pub use cloudflare::CloudflareAdapter;

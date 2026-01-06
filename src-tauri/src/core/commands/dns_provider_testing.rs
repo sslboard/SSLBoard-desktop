@@ -10,7 +10,7 @@ use crate::issuance::dns_providers::{adapter_for_provider, poll_dns_propagation}
 use crate::secrets::manager::SecretManager;
 use crate::storage::dns::DnsConfigStore;
 
-use super::dns_provider_validation::{categorize_dns_error, validate_cloudflare_token, validate_digitalocean_token, validate_route53_token};
+use super::dns_validation::categorize_dns_error;
 
 /// Tests a DNS provider configuration by creating a temporary TXT record.
 #[tauri::command]
@@ -29,137 +29,7 @@ pub async fn dns_provider_test(
             .ok_or_else(|| anyhow::anyhow!("provider not found: {}", test_req.provider_id))?;
         info!("[dns-test] Found provider: type={}, label={}", provider.provider_type, provider.label);
 
-        // First, validate credentials before proceeding with the test
-        info!("[dns-test] Validating credentials for provider type: {}", provider.provider_type);
-        let validation_result = match provider.provider_type.as_str() {
-            "cloudflare" => {
-                if provider.secret_refs.is_empty() {
-                    return Ok(DnsProviderTestResult {
-                        success: false,
-                        record_name: None,
-                        value: None,
-                        propagation: None,
-                        error: Some("Cloudflare provider missing API token".to_string()),
-                        error_category: Some(categorize_dns_error(&anyhow::anyhow!("missing credentials"))),
-                        error_stage: Some("validation".to_string()),
-                        elapsed_ms: started.elapsed().as_millis() as u64,
-                        create_ms: None,
-                        propagation_ms: None,
-                        cleanup_ms: None,
-                    });
-                }
-                let token_ref = &provider.secret_refs[0];
-                match secrets.resolve_secret(token_ref) {
-                    Ok(token_bytes) => {
-                        match String::from_utf8(token_bytes) {
-                            Ok(token) => validate_cloudflare_token(&token),
-                            Err(_) => Err(anyhow::anyhow!("Failed to decode Cloudflare API token")),
-                        }
-                    }
-                    Err(err) => Err(anyhow::anyhow!("Failed to resolve Cloudflare API token: {}", err)),
-                }
-            }
-            "digitalocean" => {
-                if provider.secret_refs.is_empty() {
-                    return Ok(DnsProviderTestResult {
-                        success: false,
-                        record_name: None,
-                        value: None,
-                        propagation: None,
-                        error: Some("DigitalOcean provider missing API token".to_string()),
-                        error_category: Some(categorize_dns_error(&anyhow::anyhow!("missing credentials"))),
-                        error_stage: Some("validation".to_string()),
-                        elapsed_ms: started.elapsed().as_millis() as u64,
-                        create_ms: None,
-                        propagation_ms: None,
-                        cleanup_ms: None,
-                    });
-                }
-                let token_ref = &provider.secret_refs[0];
-                match secrets.resolve_secret(token_ref) {
-                    Ok(token_bytes) => {
-                        match String::from_utf8(token_bytes) {
-                            Ok(token) => validate_digitalocean_token(&token),
-                            Err(_) => Err(anyhow::anyhow!("Failed to decode DigitalOcean API token")),
-                        }
-                    }
-                    Err(err) => Err(anyhow::anyhow!("Failed to resolve DigitalOcean API token: {}", err)),
-                }
-            }
-            "route53" => {
-                if provider.secret_refs.len() < 2 {
-                    return Ok(DnsProviderTestResult {
-                        success: false,
-                        record_name: None,
-                        value: None,
-                        propagation: None,
-                        error: Some("Route 53 provider missing access key or secret key".to_string()),
-                        error_category: Some(categorize_dns_error(&anyhow::anyhow!("missing credentials"))),
-                        error_stage: Some("validation".to_string()),
-                        elapsed_ms: started.elapsed().as_millis() as u64,
-                        create_ms: None,
-                        propagation_ms: None,
-                        cleanup_ms: None,
-                    });
-                }
-                let access_key_ref = &provider.secret_refs[0];
-                let secret_key_ref = &provider.secret_refs[1];
-                match (
-                    secrets.resolve_secret(access_key_ref),
-                    secrets.resolve_secret(secret_key_ref),
-                ) {
-                    (Ok(access_key_bytes), Ok(secret_key_bytes)) => {
-                        match (
-                            String::from_utf8(access_key_bytes),
-                            String::from_utf8(secret_key_bytes),
-                        ) {
-                            (Ok(access_key), Ok(secret_key)) => validate_route53_token(&access_key, &secret_key),
-                            _ => Err(anyhow::anyhow!("Failed to decode Route 53 credentials")),
-                        }
-                    }
-                    _ => Err(anyhow::anyhow!("Failed to resolve Route 53 credentials")),
-                }
-            }
-            "manual" => {
-                // Manual providers don't require credential validation
-                Ok(())
-            }
-            _ => {
-                return Ok(DnsProviderTestResult {
-                    success: false,
-                    record_name: None,
-                    value: None,
-                    propagation: None,
-                    error: Some(format!("Unsupported provider type: {}", provider.provider_type)),
-                    error_category: Some(categorize_dns_error(&anyhow::anyhow!("unsupported provider"))),
-                    error_stage: Some("validation".to_string()),
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                    create_ms: None,
-                    propagation_ms: None,
-                    cleanup_ms: None,
-                });
-            }
-        };
-
-        // If validation failed, return early with error
-        if let Err(validation_err) = validation_result {
-            warn!("[dns-test] Credential validation failed: {}", validation_err);
-            let error_category = categorize_dns_error(&validation_err);
-            return Ok(DnsProviderTestResult {
-                success: false,
-                record_name: None,
-                value: None,
-                propagation: None,
-                error: Some(validation_err.to_string()),
-                error_category: Some(error_category),
-                error_stage: Some("validation".to_string()),
-                elapsed_ms: started.elapsed().as_millis() as u64,
-                create_ms: None,
-                propagation_ms: None,
-                cleanup_ms: None,
-            });
-        }
-
+        // Generate test record details
         let suffix = provider
             .domain_suffixes
             .get(0)
