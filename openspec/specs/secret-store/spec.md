@@ -3,9 +3,7 @@
 ## Purpose
 
 The Secret Store provides a secure, local-only abstraction for managing sensitive credentials (DNS API tokens, ACME account keys, private keys) without exposing them to the untrusted UI. It leverages OS-level secure storage (Keychain, Credential Manager) and local encryption to ensure secrets remain protected at rest and in memory.
-
 ## Requirements
-
 ### Requirement: Secrets remain in the trusted Rust core
 
 The system MUST ensure that raw secret material (DNS API tokens, ACME account private keys, managed private keys) never crosses the IPC boundary to the UI and is only accepted by Rust during create/update flows.
@@ -189,20 +187,6 @@ The system SHALL use secure memory handling for the master key, ensuring the key
 - **WHEN** the application terminates
 - **THEN** the master key SHALL be zeroized as part of cleanup
 
-### Requirement: Secrets database strict file permissions
-
-The system SHALL create and maintain the `secrets.sqlite` database file with strict file permissions (mode 0600 on Unix systems) to prevent unauthorized access.
-
-#### Scenario: Database created with restricted permissions
-
-- **WHEN** the secrets database file is created for the first time
-- **THEN** it SHALL have file permissions set to owner read/write only (0600)
-
-#### Scenario: Permissions corrected on startup
-
-- **WHEN** the application starts and the secrets database has overly permissive permissions
-- **THEN** the system SHALL restrict the permissions to 0600
-
 ### Requirement: Migration from per-secret keyring storage
 
 The system SHALL migrate existing secrets from per-secret keyring entries to the new master-key-encrypted SQLite storage on upgrade.
@@ -269,4 +253,18 @@ The system SHALL configure biometric access control using Apple Security framewo
 - **AND** macOS SHALL display the biometric prompt automatically (no explicit unlock button needed)
 - **AND** the operation SHALL proceed after successful biometric authentication
 - **AND** the system SHALL fail gracefully if authentication is denied or unavailable
+
+### Requirement: Application database strict file permissions
+
+The system SHALL create and maintain a single SQLite database file (`sslboard.sqlite`) that contains both non-secret application metadata and secret-store tables. This unified database file MUST be hardened with strict file permissions (mode 0600 on Unix systems) to prevent unauthorized access.
+
+#### Scenario: Database created with restricted permissions
+
+- **WHEN** the application database file is created for the first time
+- **THEN** it SHALL have file permissions set to owner read/write only (0600)
+
+#### Scenario: Permissions corrected on startup
+
+- **WHEN** the application starts and the application database has overly permissive permissions
+- **THEN** the system SHALL restrict the permissions to 0600
 
