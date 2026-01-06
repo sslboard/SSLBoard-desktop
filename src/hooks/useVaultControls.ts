@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { lockVault } from "../lib/secrets";
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const BLUR_LOCK_DELAY_MS = 10_000; // 10 seconds
 
 export function useVaultControls() {
   const [vaultUnlocked, setVaultUnlocked] = useState<boolean>(false);
-  const [vaultBusy, setVaultBusy] = useState(false);
   const idleTimer = useRef<number | null>(null);
   const blurTimer = useRef<number | null>(null);
   const vaultUnlockedRef = useRef(false);
@@ -27,8 +27,8 @@ export function useVaultControls() {
   const lockIfActive = async () => {
     if (!vaultUnlockedRef.current) return;
     try {
-      const status = await lockVault();
-      setVaultUnlocked(status);
+      await lockVault();
+      setVaultUnlocked(false);
     } catch (err) {
       console.error("Idle auto-lock failed", err);
     }
@@ -88,7 +88,7 @@ export function useVaultControls() {
       blurTimer.current = window.setTimeout(() => {
         blurTimer.current = null;
         void lockIfActive();
-      }, 10_000);
+      }, BLUR_LOCK_DELAY_MS);
     };
     const handleVisibility = () => {
       if (document.hidden) {
@@ -129,22 +129,7 @@ export function useVaultControls() {
     };
   }, []);
 
-  const lockVaultNow = async () => {
-    if (vaultBusy || !vaultUnlockedRef.current) return;
-    setVaultBusy(true);
-    try {
-      const status = await lockVault();
-      setVaultUnlocked(status);
-    } catch (err) {
-      console.error("Vault lock failed", err);
-    } finally {
-      setVaultBusy(false);
-    }
-  };
-
   return {
     vaultUnlocked,
-    vaultBusy,
-    lockVault: lockVaultNow,
   };
 }

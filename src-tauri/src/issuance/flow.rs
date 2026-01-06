@@ -1,15 +1,16 @@
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
+    time::Duration,
 };
 
 use acme_lib::{
-    create_p256_key, create_p384_key, create_rsa_key,
+    Certificate, Directory, DirectoryUrl, Error as AcmeError, create_p256_key, create_p384_key,
+    create_rsa_key,
     order::{Auth, NewOrder},
     persist::{Persist, PersistKey, PersistKind},
-    Certificate, Directory, DirectoryUrl, Error as AcmeError,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{TimeZone, Utc};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -17,8 +18,10 @@ use x509_parser::pem::parse_x509_pem;
 
 use crate::{
     core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve},
-    issuance::dns::{DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter},
-    issuance::dns_providers::adapter_for_provider,
+    issuance::dns::{
+        DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter, PropagationState,
+    },
+    issuance::dns_providers::{adapter_for_provider, poll_dns_propagation},
     secrets::{manager::SecretManager, types::SecretKind},
     storage::{
         dns::{DnsConfigStore, DnsProvider},
@@ -263,6 +266,59 @@ pub fn complete_managed_dns01(
     } = pending;
 
     let auths = order.authorizations().map_err(|e| anyhow!(e.to_string()))?;
+    for auth in &auths {
+        let dns = auth.dns_challenge();
+        let proof = dns.dns_proof();
+        let domain = auth.domain_name().to_string();
+
+        // Poll for DNS propagation with retries using unified retry logic
+        let timeout = Duration::from_secs(30);
+        let interval = Duration::from_secs(2);
+        let record_name = ManualDnsAdapter::record_name(&domain);
+
+        let propagation_result = poll_dns_propagation(&record_name, &proof, timeout, interval)?;
+
+        // Check final state after polling
+        match propagation_result.state {
+            PropagationState::Found => {
+                // Already handled in loop, continue to next domain
+            }
+            PropagationState::NxDomain => {
+                return Err(anyhow!(
+                    "No TXT record found at {} after {}s. Please ensure the DNS record is created and propagated.",
+                    record_name,
+                    timeout.as_secs()
+                ));
+            }
+            PropagationState::Pending => {
+                return Err(anyhow!(
+                    "TXT record not found at {} after {}s. Please wait for DNS propagation and try again.",
+                    record_name,
+                    timeout.as_secs()
+                ));
+            }
+            PropagationState::WrongContent => {
+                // Should have been caught in loop, but handle just in case
+                return Err(anyhow!(
+                    "TXT record at {} has wrong value. Expected: {}. Observed: {:?}",
+                    record_name,
+                    proof,
+                    propagation_result.observed_values
+                ));
+            }
+            PropagationState::Error => {
+                return Err(anyhow!(
+                    "Failed to check DNS propagation for {}: {}",
+                    record_name,
+                    propagation_result
+                        .reason
+                        .unwrap_or_else(|| "Unknown error".to_string())
+                ));
+            }
+        }
+    }
+
+    // All DNS records are present, proceed with ACME validation
     for auth in auths {
         let dns = auth.dns_challenge();
         dns.validate(2000).map_err(|e| anyhow!(e.to_string()))?;
@@ -451,7 +507,7 @@ fn format_key_label(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_key_params, KeyAlgorithm, KeyCurve};
+    use super::{KeyAlgorithm, KeyCurve, resolve_key_params};
 
     #[test]
     fn defaults_to_rsa_2048_when_missing() {

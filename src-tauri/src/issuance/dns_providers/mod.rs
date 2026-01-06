@@ -5,7 +5,10 @@ use crate::{secrets::manager::SecretManager, storage::dns::DnsProvider};
 mod cloudflare;
 mod digitalocean;
 pub(crate) mod http;
+mod retry;
 mod route53;
+
+pub use retry::{poll_dns_propagation, retry_provider_verification};
 
 pub use cloudflare::CloudflareAdapter;
 pub use digitalocean::DigitalOceanAdapter;

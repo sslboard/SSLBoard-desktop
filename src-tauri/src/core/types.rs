@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::issuance::dns::{DnsPropagationResult, DnsRecordInstruction};
-use crate::secrets::types::{SecretKind, SecretMetadata};
+use crate::secrets::types::SecretMetadata;
 
 /// Represents the source of a certificate record, indicating whether it was
 /// discovered externally or is managed by the application.
@@ -75,8 +75,7 @@ pub enum ExportBundle {
     Fullchain,
 }
 
-impl ExportBundle {
-}
+impl ExportBundle {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportCertificateRequest {
@@ -122,20 +121,6 @@ pub struct GetPreferenceRequest {
 pub struct SetPreferenceRequest {
     pub name: String,
     pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateSecretRequest {
-    pub label: String,
-    pub kind: SecretKind,
-    pub secret_value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateSecretRequest {
-    pub id: String,
-    pub secret_value: String,
-    pub label: Option<String>,
 }
 
 pub type SecretRefRecord = SecretMetadata;
@@ -194,23 +179,6 @@ pub struct UpdateIssuerRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeleteIssuerRequest {
     pub issuer_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct PrepareDnsChallengeRequest {
-    pub domain: String,
-    pub txt_value: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct PreparedDnsChallenge {
-    pub record: DnsRecordInstruction,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CheckPropagationRequest {
-    pub domain: String,
-    pub txt_value: String,
 }
 
 pub type PropagationDto = DnsPropagationResult;
@@ -284,16 +252,6 @@ pub struct TestDnsProviderRequest {
     pub provider_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ValidateDnsProviderTokenRequest {
-    pub provider_type: DnsProviderType,
-    pub api_token: Option<String>,
-    #[serde(rename = "route53_access_key")]
-    pub route53_access_key: Option<String>,
-    #[serde(rename = "route53_secret_key")]
-    pub route53_secret_key: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DnsProviderErrorCategory {
@@ -317,13 +275,6 @@ pub struct DnsProviderTestResult {
     pub create_ms: Option<u64>,
     pub propagation_ms: Option<u64>,
     pub cleanup_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DnsProviderTokenValidationResult {
-    pub success: bool,
-    pub error: Option<String>,
-    pub error_category: Option<DnsProviderErrorCategory>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

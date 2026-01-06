@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{http, matches_zone, DnsProviderAdapter};
+use super::{DnsProviderAdapter, http, matches_zone, retry_provider_verification};
 
 pub struct CloudflareAdapter {
     api_token: String,
@@ -314,78 +314,205 @@ impl CloudflareAdapter {
     }
 
     fn delete_txt_record(&mut self, record_name: &str) -> Result<()> {
+        use std::time::Instant;
+        let start = Instant::now();
+
+        log::debug!("[cloudflare-cleanup] Starting cleanup for {}", record_name);
+        let zone_discover_start = Instant::now();
         let zone_id = self.discover_zone_id()?;
+        log::debug!(
+            "[cloudflare-cleanup] Zone discovery took {}ms",
+            zone_discover_start.elapsed().as_millis()
+        );
+
         let client = http::HttpClient::shared();
 
         // Find all TXT records with this name (needed for apex+wildcard certs)
+        let list_start = Instant::now();
         let records = self.list_existing_txt_records(&client, &zone_id, record_name)?;
+        log::debug!(
+            "[cloudflare-cleanup] List records took {}ms, found {} record(s)",
+            list_start.elapsed().as_millis(),
+            records.len()
+        );
+
         if records.is_empty() {
+            log::debug!(
+                "[cloudflare-cleanup] No records to delete, total cleanup took {}ms",
+                start.elapsed().as_millis()
+            );
             return Ok(()); // No records to delete
         }
 
-        // Delete all TXT records with this name
-        for record in records {
-            let delete_response = client
-                .delete(&format!(
-                    "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-                    zone_id, record.id
-                ))
-                .header("Authorization", format!("Bearer {}", self.api_token))
-                .send()
-                .context("Failed to delete Cloudflare DNS record")?;
+        // Delete all TXT records in parallel
+        use std::sync::mpsc;
+        use std::thread;
 
-            if !delete_response.status().is_success() {
-                // If record was already deleted (404), continue; otherwise return error
-                if delete_response.status() == 404 {
-                    continue;
+        let delete_start = Instant::now();
+        log::debug!(
+            "[cloudflare-cleanup] Starting parallel deletion of {} record(s)",
+            records.len()
+        );
+
+        let (tx, rx) = mpsc::channel();
+        let mut handles = Vec::new();
+
+        for (idx, record) in records.iter().enumerate() {
+            let tx = tx.clone();
+            let zone_id_clone = zone_id.clone();
+            let record_id = record.id.clone();
+            let api_token_clone = self.api_token.clone();
+            let idx_clone = idx;
+            let total = records.len();
+
+            let handle = thread::spawn(move || {
+                let thread_start = Instant::now();
+                log::debug!(
+                    "[cloudflare-cleanup] Thread deleting record {}/{} (id: {})",
+                    idx_clone + 1,
+                    total,
+                    record_id
+                );
+
+                let client = http::HttpClient::shared();
+                let delete_response = client
+                    .delete(&format!(
+                        "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
+                        zone_id_clone, record_id
+                    ))
+                    .header("Authorization", format!("Bearer {}", api_token_clone))
+                    .send();
+
+                let result = match delete_response {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let elapsed = thread_start.elapsed().as_millis();
+                        log::debug!(
+                            "[cloudflare-cleanup] Delete request {}/{} completed in {}ms (status: {})",
+                            idx_clone + 1,
+                            total,
+                            elapsed,
+                            status
+                        );
+
+                        if status.is_success() {
+                            Ok(())
+                        } else if status == 404 {
+                            log::debug!(
+                                "[cloudflare-cleanup] Record {}/{} already deleted (404)",
+                                idx_clone + 1,
+                                total
+                            );
+                            Ok(()) // 404 is fine, record already gone
+                        } else {
+                            Err(anyhow!("Delete failed with status: {}", status))
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "[cloudflare-cleanup] Delete request {}/{} failed: {}",
+                            idx_clone + 1,
+                            total,
+                            err
+                        );
+                        Err(anyhow!("Delete request failed: {}", err))
+                    }
+                };
+
+                tx.send((idx_clone, result)).ok();
+            });
+
+            handles.push(handle);
+        }
+
+        drop(tx); // Close sender so receiver knows when all threads are done
+
+        // Wait for all deletions to complete and collect results
+        let mut errors = Vec::new();
+        for _ in 0..records.len() {
+            if let Ok((idx, result)) = rx.recv() {
+                if let Err(err) = result {
+                    errors.push((idx, err));
                 }
-                return Err(http::status_error(
-                    "Cloudflare",
-                    delete_response.status(),
-                    None,
-                ));
             }
         }
 
+        // Wait for all threads to finish
+        for handle in handles {
+            handle.join().ok();
+        }
+
+        log::debug!(
+            "[cloudflare-cleanup] Parallel deletion completed in {}ms ({} error(s))",
+            delete_start.elapsed().as_millis(),
+            errors.len()
+        );
+
+        // If any deletion failed (and it wasn't a 404), return error
+        if !errors.is_empty() {
+            let first_error = &errors[0].1;
+            return Err(anyhow!(
+                "Failed to delete {} record(s): {}",
+                errors.len(),
+                first_error
+            ));
+        }
+
+        log::debug!(
+            "[cloudflare-cleanup] Cleanup completed in {}ms",
+            start.elapsed().as_millis()
+        );
         Ok(())
     }
 
     fn verify_record_content(
         &self,
-        client: &reqwest::blocking::Client,
+        _client: &reqwest::blocking::Client,
         zone_id: &str,
         record_id: &str,
         expected_content: &str,
     ) -> Result<()> {
-        for _ in 0..3 {
-            let check_response = client
-                .get(&format!(
-                    "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-                    zone_id, record_id
-                ))
-                .header("Authorization", format!("Bearer {}", self.api_token))
-                .header("Content-Type", "application/json")
-                .send()
-                .context("Failed to fetch Cloudflare DNS record")?;
+        let zone_id = zone_id.to_string();
+        let record_id = record_id.to_string();
+        let api_token = self.api_token.clone();
+        let expected_content = expected_content.to_string();
 
-            if check_response.status().is_success() {
-                let check_result: CloudflareDnsRecordResponse = check_response
-                    .json()
-                    .context("Failed to parse Cloudflare DNS record response")?;
-                if let Some(record) = check_result.result {
-                    if record
-                        .content
-                        .as_deref()
-                        .map(|content| content == expected_content)
-                        .unwrap_or(false)
-                    {
-                        return Ok(());
+        retry_provider_verification(
+            &format!("record {}", record_id),
+            "Cloudflare record verification",
+            Duration::from_secs(2),
+            Duration::from_millis(300),
+            move || {
+                // Use shared client inside closure
+                let client = http::HttpClient::shared();
+                let check_response = client
+                    .get(&format!(
+                        "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
+                        zone_id, record_id
+                    ))
+                    .header("Authorization", format!("Bearer {}", api_token))
+                    .header("Content-Type", "application/json")
+                    .send()
+                    .context("Failed to fetch Cloudflare DNS record")?;
+
+                if check_response.status().is_success() {
+                    let check_result: CloudflareDnsRecordResponse = check_response
+                        .json()
+                        .context("Failed to parse Cloudflare DNS record response")?;
+                    if let Some(record) = check_result.result {
+                        if record
+                            .content
+                            .as_deref()
+                            .map(|content| content == expected_content)
+                            .unwrap_or(false)
+                        {
+                            return Ok(true);
+                        }
                     }
                 }
-            }
-            std::thread::sleep(Duration::from_millis(300));
-        }
-        Err(anyhow!("Cloudflare record verification failed"))
+                Ok(false)
+            },
+        )
     }
 }
 

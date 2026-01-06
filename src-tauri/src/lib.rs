@@ -5,22 +5,19 @@ mod secrets;
 mod storage;
 
 use core::commands::{
-    check_dns_propagation, complete_managed_issuance, create_issuer, create_secret_ref,
-    delete_issuer, delete_secret_ref, dns_provider_create, dns_provider_delete, dns_provider_list,
-    dns_provider_test, dns_provider_update, dns_provider_validate_token, dns_resolve_provider,
-    export_certificate_pem, get_certificate, get_preference, greet, is_vault_unlocked,
-    list_certificates, list_issuers, list_secret_refs,
-    lock_vault, prepare_dns_challenge, seed_fake_certificate, select_issuer,
+    complete_managed_issuance, create_issuer, delete_issuer, dns_provider_create,
+    dns_provider_delete, dns_provider_list, dns_provider_test, dns_provider_update,
+    dns_resolve_provider, export_certificate_pem, get_certificate, get_preference,
+    list_certificates, list_issuers, list_secret_refs, lock_vault, select_issuer, set_preference,
     start_managed_issuance, update_issuer,
-    update_secret_ref, set_preference,
 };
 use secrets::manager::SecretManager;
+use std::sync::Once;
 use storage::{
     dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore,
     preferences::PreferencesStore,
 };
 use tauri::Manager;
-use std::sync::Once;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -50,30 +47,21 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             list_certificates,
             get_certificate,
-            seed_fake_certificate,
             export_certificate_pem,
             list_secret_refs,
-            create_secret_ref,
-            update_secret_ref,
-            delete_secret_ref,
             lock_vault,
-            is_vault_unlocked,
             list_issuers,
             select_issuer,
             create_issuer,
             update_issuer,
             delete_issuer,
-            prepare_dns_challenge,
-            check_dns_propagation,
             dns_provider_list,
             dns_provider_create,
             dns_provider_update,
             dns_provider_delete,
             dns_provider_test,
-            dns_provider_validate_token,
             dns_resolve_provider,
             start_managed_issuance,
             complete_managed_issuance,
@@ -90,8 +78,31 @@ fn init_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let env = env_logger::Env::default().default_filter_or("info");
-        env_logger::Builder::from_env(env)
-            .format_timestamp_millis()
-            .init();
+        let mut builder = env_logger::Builder::from_env(env);
+        // Reduce verbosity of rustls and related TLS libraries by default
+        // Can be overridden via RUST_LOG env var (e.g., RUST_LOG=debug,rustls=debug)
+        builder.filter_module("rustls", log::LevelFilter::Warn);
+        builder.filter_module("rustls::client", log::LevelFilter::Warn);
+        builder.filter_module("rustls::client::hs", log::LevelFilter::Warn);
+        builder.filter_module("rustls::client::tls13", log::LevelFilter::Warn);
+        // Reduce verbosity of ureq HTTP client by default
+        builder.filter_module("ureq", log::LevelFilter::Warn);
+        builder.filter_module("ureq::stream", log::LevelFilter::Warn);
+        builder.filter_module("ureq::unit", log::LevelFilter::Warn);
+        builder.filter_module("ureq::pool", log::LevelFilter::Warn);
+        builder.filter_module("ureq::response", log::LevelFilter::Warn);
+        // Reduce verbosity of reqwest HTTP client by default
+        builder.filter_module("reqwest", log::LevelFilter::Warn);
+        builder.filter_module("reqwest::connect", log::LevelFilter::Warn);
+        // Reduce verbosity of hyper_util HTTP client by default
+        builder.filter_module("hyper_util", log::LevelFilter::Warn);
+        builder.filter_module("hyper_util::client", log::LevelFilter::Warn);
+        builder.filter_module("hyper_util::client::legacy", log::LevelFilter::Warn);
+        builder.filter_module(
+            "hyper_util::client::legacy::connect",
+            log::LevelFilter::Warn,
+        );
+        builder.filter_module("hyper_util::client::legacy::pool", log::LevelFilter::Warn);
+        builder.format_timestamp_millis().init();
     });
 }

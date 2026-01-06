@@ -1,22 +1,17 @@
-import { Lock, Loader2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { Logo } from "../logo";
-import { Button, buttonVariants } from "../ui/button";
+import { buttonVariants } from "../ui/button";
 import type { NavItem } from "./sidebar";
 
 type TopbarProps = {
   navItems: NavItem[];
   vaultUnlocked: boolean;
-  vaultBusy: boolean;
-  onLockVault: () => void;
 };
 
 export function Topbar({
   navItems,
   vaultUnlocked,
-  vaultBusy,
-  onLockVault,
 }: TopbarProps) {
   const vaultLabel = vaultUnlocked ? "Vault unlocked" : "Vault locked";
 
@@ -59,22 +54,6 @@ export function Topbar({
             />
             <span>{vaultLabel}</span>
           </div>
-          {vaultUnlocked ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onLockVault}
-              disabled={vaultBusy}
-              className="hidden items-center gap-2 sm:inline-flex"
-            >
-              {vaultBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Lock className="h-4 w-4 text-amber-500" />
-              )}
-              <span className="font-medium text-foreground">Lock vault</span>
-            </Button>
-          ) : null}
         </div>
       </div>
     </header>

@@ -1,14 +1,12 @@
-import { Compass, Download, ShieldCheck, Sparkles } from "lucide-react";
+import { Compass, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
 
 export function CertificatesEmptyState({
   onIssue,
   onDiscover,
-  onSeed,
 }: {
   onIssue: () => void;
   onDiscover: () => void;
-  onSeed: () => void;
 }) {
   return (
     <div className="rounded-xl border bg-gradient-to-br from-primary/5 via-card to-secondary/10 p-8 shadow-soft">
@@ -32,10 +30,6 @@ export function CertificatesEmptyState({
             <Button variant="secondary" onClick={onDiscover}>
               <Compass className="mr-2 h-4 w-4" />
               Discover via CT
-            </Button>
-            <Button variant="outline" onClick={onSeed}>
-              <Download className="mr-2 h-4 w-4" />
-              Add demo record
             </Button>
           </div>
         </div>

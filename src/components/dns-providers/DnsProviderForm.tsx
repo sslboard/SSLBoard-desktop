@@ -13,7 +13,6 @@ import {
 } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import type {
-  DnsProviderTokenValidationResult,
   DnsProviderType,
 } from "../../lib/dns-providers";
 import { PROVIDER_OPTIONS } from "./provider-constants";
@@ -27,10 +26,6 @@ export function DnsProviderForm({
   saving,
   onSubmit,
   onCancel,
-  tokenTestResult,
-  tokenTestLoading,
-  onTestToken,
-  onTokenInputChange,
 }: {
   formState: ProviderFormState;
   setFormState: Dispatch<SetStateAction<ProviderFormState>>;
@@ -38,10 +33,6 @@ export function DnsProviderForm({
   saving: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
-  tokenTestResult: DnsProviderTokenValidationResult | null;
-  tokenTestLoading: boolean;
-  onTestToken: () => void;
-  onTokenInputChange: () => void;
 }) {
   const requiresToken = formState.provider_type !== "manual";
 
@@ -76,7 +67,6 @@ export function DnsProviderForm({
               handleFormStateChange({
                 provider_type: value as DnsProviderType,
               });
-              onTokenInputChange();
             }}
             disabled={formMode === "edit"}
           >
@@ -124,10 +114,6 @@ export function DnsProviderForm({
             formMode={formMode}
             formState={formState}
             onFormStateChange={handleFormStateChange}
-            onTokenInputChange={onTokenInputChange}
-            tokenTestResult={tokenTestResult}
-            tokenTestLoading={tokenTestLoading}
-            onTestToken={onTestToken}
           />
         ) : null}
 

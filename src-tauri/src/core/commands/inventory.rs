@@ -41,19 +41,3 @@ pub async fn get_certificate(
         .map_err(|err| err.to_string())?
         .ok_or_else(|| format!("Certificate not found: {missing_id}"))
 }
-
-/// Seeds the database with a sample development certificate.
-/// This command is used for development and testing purposes to populate
-/// the inventory with a fake certificate record. It only adds the sample
-/// certificate if the inventory is empty.
-///
-/// # Returns
-/// A Result indicating success or an error string
-#[tauri::command]
-pub async fn seed_fake_certificate(store: State<'_, InventoryStore>) -> Result<(), String> {
-    let store = store.inner().clone();
-    spawn_blocking(move || store.seed_dev_certificate())
-        .await
-        .map_err(|err| format!("Seed join error: {err}"))?
-        .map_err(|err| err.to_string())
-}

@@ -10,7 +10,6 @@ import {
   type DnsProviderTestResult,
 } from "../lib/dns-providers";
 import { maybeToastVaultUnlockError, normalizeError } from "../lib/errors";
-import { useDnsProviderTokenTest } from "./useDnsProviderTokenTest";
 
 export type ProviderFormState = CreateDnsProviderRequest & { provider_id?: string };
 
@@ -34,12 +33,6 @@ export function useDnsProviderManager() {
   );
   const [testLoading, setTestLoading] = useState<Record<string, boolean>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const {
-    tokenTestResult,
-    tokenTestLoading,
-    testToken,
-    clearTokenTestResult,
-  } = useDnsProviderTokenTest();
 
   useEffect(() => {
     void refreshProviders();
@@ -73,7 +66,6 @@ export function useDnsProviderManager() {
       route53_secret_key: "",
       config: null,
     });
-    clearTokenTestResult();
   }
 
   function startEdit(provider: DnsProviderRecord) {
@@ -89,7 +81,6 @@ export function useDnsProviderManager() {
       route53_secret_key: "",
       config: provider.config ?? null,
     });
-    clearTokenTestResult();
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -168,10 +159,6 @@ export function useDnsProviderManager() {
     }
   }
 
-  function handleTokenTest() {
-    void testToken(formState);
-  }
-
   return {
     providers,
     loading,
@@ -190,9 +177,5 @@ export function useDnsProviderManager() {
     testResults,
     testLoading,
     handleTest,
-    tokenTestResult,
-    tokenTestLoading,
-    handleTokenTest,
-    clearTokenTestResult,
   };
 }

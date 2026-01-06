@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { checkDnsPropagation, type PropagationResult } from "../lib/dns";
+import { useRef, useState } from "react";
 import {
   completeManagedIssuance,
   keyOptionToParams,
@@ -10,28 +9,6 @@ import {
 import { normalizeError } from "../lib/errors";
 import type { CertificateRecord } from "../lib/certificates";
 
-type StatusMap = Record<string, PropagationResult | null>;
-
-const DNS_RETRY_WINDOW_MS = 60_000;
-const DNS_RETRY_INTERVAL_MS = 8_000;
-
-function getRecordKey(rec: { record_name: string; value: string }): string {
-  return `${rec.record_name}:${rec.value}`;
-}
-
-function getDnsDomain(recordName: string) {
-  return recordName.replace(/^_acme-challenge\./, "");
-}
-
-function allRecordsFound(
-  statusMap: StatusMap,
-  startResult: StartIssuanceResponse,
-) {
-  return startResult.dns_records.every((rec) => {
-    const status = statusMap[getRecordKey(rec)];
-    return status?.state === "found";
-  });
-}
 
 export function useManagedIssuanceFlow(
   selectedIssuerId: string | null,
@@ -39,22 +16,13 @@ export function useManagedIssuanceFlow(
   keyOption: IssuanceKeyOption,
 ) {
   const [startResult, setStartResult] = useState<StartIssuanceResponse | null>(null);
-  const [statusMap, setStatusMap] = useState<StatusMap>({});
   const [loadingStart, setLoadingStart] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [certificate, setCertificate] = useState<CertificateRecord | null>(null);
   const [awaitingManual, setAwaitingManual] = useState(false);
-  const [dnsFailed, setDnsFailed] = useState(false);
   const [finalizeFailed, setFinalizeFailed] = useState(false);
   const flowTokenRef = useRef(0);
-
-  useEffect(() => {
-    if (!startResult) {
-      setStatusMap({});
-    }
-  }, [startResult]);
 
   function nextFlowToken() {
     flowTokenRef.current += 1;
@@ -63,24 +31,6 @@ export function useManagedIssuanceFlow(
 
   function isStale(token: number) {
     return flowTokenRef.current !== token;
-  }
-
-  async function sleep(durationMs: number) {
-    return new Promise((resolve) => setTimeout(resolve, durationMs));
-  }
-
-  async function checkDnsOnce(result: StartIssuanceResponse, token: number) {
-    const updates: StatusMap = {};
-    for (const rec of result.dns_records) {
-      const domain = getDnsDomain(rec.record_name);
-      const status = await checkDnsPropagation(domain, rec.value);
-      if (isStale(token)) {
-        return updates;
-      }
-      updates[getRecordKey(rec)] = status;
-    }
-    setStatusMap(updates);
-    return updates;
   }
 
   async function finalizeIssuance(result: StartIssuanceResponse, token: number) {
@@ -108,50 +58,12 @@ export function useManagedIssuanceFlow(
     }
   }
 
-  async function runDnsVerification(result: StartIssuanceResponse, token: number) {
-    setChecking(true);
-    setDnsFailed(false);
-    setError(null);
-    const startedAt = Date.now();
-    try {
-      while (Date.now() - startedAt < DNS_RETRY_WINDOW_MS) {
-        if (isStale(token)) {
-          return;
-        }
-        const updates = await checkDnsOnce(result, token);
-        if (isStale(token)) {
-          return;
-        }
-        if (allRecordsFound(updates, result)) {
-          setChecking(false);
-          await finalizeIssuance(result, token);
-          return;
-        }
-        await sleep(DNS_RETRY_INTERVAL_MS);
-      }
-      if (!isStale(token)) {
-        setDnsFailed(true);
-        setError("DNS propagation was not detected yet. Try again shortly.");
-      }
-    } catch (err) {
-      if (!isStale(token)) {
-        setDnsFailed(true);
-        setError(normalizeError(err, "DNS verification failed."));
-      }
-    } finally {
-      if (!isStale(token)) {
-        setChecking(false);
-      }
-    }
-  }
-
   async function handleStart() {
     const token = nextFlowToken();
     setLoadingStart(true);
     setError(null);
     setCertificate(null);
     setAwaitingManual(false);
-    setDnsFailed(false);
     setFinalizeFailed(false);
     try {
       if (!selectedIssuerId) {
@@ -167,15 +79,11 @@ export function useManagedIssuanceFlow(
         return;
       }
       setStartResult(result);
-      const initialStatus: StatusMap = {};
-      result.dns_records.forEach((rec) => {
-        initialStatus[getRecordKey(rec)] = null;
-      });
-      setStatusMap(initialStatus);
       const hasManualRecords = result.dns_records.some((rec) => rec.adapter === "manual");
       setAwaitingManual(hasManualRecords);
       if (!hasManualRecords) {
-        await runDnsVerification(result, token);
+        // For managed records, the backend handles DNS propagation checking
+        await finalizeIssuance(result, token);
       }
     } catch (err) {
       if (isStale(token)) {
@@ -194,13 +102,7 @@ export function useManagedIssuanceFlow(
     if (!startResult) return;
     const token = nextFlowToken();
     setAwaitingManual(false);
-    await runDnsVerification(startResult, token);
-  }
-
-  async function retryDnsVerification() {
-    if (!startResult) return;
-    const token = nextFlowToken();
-    await runDnsVerification(startResult, token);
+    await finalizeIssuance(startResult, token);
   }
 
   async function retryFinalization() {
@@ -212,14 +114,11 @@ export function useManagedIssuanceFlow(
   function reset() {
     nextFlowToken();
     setStartResult(null);
-    setStatusMap({});
     setError(null);
     setCertificate(null);
     setAwaitingManual(false);
-    setDnsFailed(false);
     setFinalizeFailed(false);
     setLoadingStart(false);
-    setChecking(false);
     setFinalizing(false);
   }
 
@@ -235,9 +134,7 @@ export function useManagedIssuanceFlow(
 
   return {
     startResult,
-    statusMap,
     loadingStart,
-    checking,
     finalizing,
     error,
     certificate,
@@ -247,11 +144,9 @@ export function useManagedIssuanceFlow(
     hasManaged,
     dnsModeLabel,
     awaitingManual,
-    dnsFailed,
     finalizeFailed,
     handleStart,
     continueIssuance,
-    retryDnsVerification,
     retryFinalization,
     reset,
   };

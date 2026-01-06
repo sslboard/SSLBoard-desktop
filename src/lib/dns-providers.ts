@@ -105,12 +105,6 @@ export async function testDnsProvider(
   return invoke("dns_provider_test", { testReq: { provider_id: providerId } });
 }
 
-export async function validateDnsProviderToken(
-  req: ValidateDnsProviderTokenRequest,
-): Promise<DnsProviderTokenValidationResult> {
-  return invoke("dns_provider_validate_token", { validateReq: req });
-}
-
 export async function resolveDnsProvider(
   hostname: string,
 ): Promise<DnsProviderResolution> {

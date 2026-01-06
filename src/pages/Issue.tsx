@@ -34,9 +34,7 @@ export function IssuePage() {
 
   const {
     startResult,
-    statusMap,
     loadingStart,
-    checking,
     finalizing,
     error,
     certificate,
@@ -45,11 +43,9 @@ export function IssuePage() {
     hasManaged,
     dnsModeLabel,
     awaitingManual,
-    dnsFailed,
     finalizeFailed,
     handleStart,
     continueIssuance,
-    retryDnsVerification,
     retryFinalization,
     reset,
   } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, keyOption);
@@ -133,19 +129,15 @@ export function IssuePage() {
 
       {startResult && (
         <DnsInstructionsPanel
-          statusMap={statusMap}
           hasManual={hasManual}
           hasManaged={hasManaged}
           dnsModeLabel={dnsModeLabel}
           manualRecords={manualRecords}
-          checking={checking}
           finalizing={finalizing}
           awaitingManual={awaitingManual}
-          dnsFailed={dnsFailed}
           finalizeFailed={finalizeFailed}
           hasCertificate={Boolean(certificate)}
           onContinue={continueIssuance}
-          onRetryDns={retryDnsVerification}
           onRetryFinalize={retryFinalization}
         />
       )}

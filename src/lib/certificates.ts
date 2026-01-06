@@ -61,10 +61,6 @@ export async function getCertificate(
   return invoke<CertificateRecord>("get_certificate", { id });
 }
 
-export async function seedFakeCertificate(): Promise<void> {
-  return invoke("seed_fake_certificate");
-}
-
 export async function exportCertificatePem(
   exportReq: ExportCertificateRequest,
 ): Promise<ExportCertificateResponse> {

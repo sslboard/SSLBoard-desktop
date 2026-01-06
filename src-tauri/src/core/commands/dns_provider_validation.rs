@@ -1,75 +1,9 @@
 use anyhow::Context;
-use tauri::async_runtime::spawn_blocking;
 
-use crate::core::types::{
-    DnsProviderErrorCategory, DnsProviderTokenValidationResult, DnsProviderType,
-    ValidateDnsProviderTokenRequest,
-};
+use crate::core::types::DnsProviderErrorCategory;
 use crate::issuance::dns_providers::http;
 
-/// Validates DNS provider credentials without storing them.
-#[tauri::command]
-pub async fn dns_provider_validate_token(
-    validate_req: ValidateDnsProviderTokenRequest,
-) -> Result<DnsProviderTokenValidationResult, String> {
-    spawn_blocking(move || -> Result<DnsProviderTokenValidationResult, anyhow::Error> {
-        let result = match validate_req.provider_type {
-            DnsProviderType::Cloudflare => {
-                let token = validate_req
-                    .api_token
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("API token is required for Cloudflare"))?;
-                validate_cloudflare_token(&token)
-            }
-            DnsProviderType::DigitalOcean => {
-                let token = validate_req
-                    .api_token
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("API token is required for DigitalOcean"))?;
-                validate_digitalocean_token(&token)
-            }
-            DnsProviderType::Route53 => {
-                let access_key = validate_req
-                    .route53_access_key
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("Route 53 access key is required"))?;
-                let secret_key = validate_req
-                    .route53_secret_key
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("Route 53 secret key is required"))?;
-                validate_route53_token(&access_key, &secret_key)
-            }
-            DnsProviderType::Manual => Err(anyhow::anyhow!(
-                "manual DNS providers do not require token validation"
-            )),
-        };
-
-        match result {
-            Ok(()) => Ok(DnsProviderTokenValidationResult {
-                success: true,
-                error: None,
-                error_category: None,
-            }),
-            Err(err) => {
-                let category = categorize_dns_error(&err);
-                Ok(DnsProviderTokenValidationResult {
-                    success: false,
-                    error: Some(err.to_string()),
-                    error_category: Some(category),
-                })
-            }
-        }
-    })
-    .await
-    .map_err(|err| format!("DNS provider token validation join error: {err}"))?
-    .map_err(|err: anyhow::Error| err.to_string())
-}
-
-fn validate_cloudflare_token(token: &str) -> Result<(), anyhow::Error> {
+pub(crate) fn validate_cloudflare_token(token: &str) -> Result<(), anyhow::Error> {
     #[derive(serde::Deserialize)]
     struct CloudflareZoneListResponse {
         success: bool,
@@ -106,7 +40,7 @@ fn validate_cloudflare_token(token: &str) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn validate_digitalocean_token(token: &str) -> Result<(), anyhow::Error> {
+pub(crate) fn validate_digitalocean_token(token: &str) -> Result<(), anyhow::Error> {
     let client = http::HttpClient::shared();
     let response = client
         .get("https://api.digitalocean.com/v2/domains")
@@ -122,12 +56,15 @@ fn validate_digitalocean_token(token: &str) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn validate_route53_token(access_key: &str, secret_key: &str) -> Result<(), anyhow::Error> {
+pub(crate) fn validate_route53_token(
+    access_key: &str,
+    secret_key: &str,
+) -> Result<(), anyhow::Error> {
     let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
     rt.block_on(async move {
         use aws_config::BehaviorVersion;
-        use aws_sdk_route53::config::Credentials;
         use aws_sdk_route53::Client;
+        use aws_sdk_route53::config::Credentials;
 
         let credentials = Credentials::new(access_key, secret_key, None, None, "sslboard");
         let config = aws_config::defaults(BehaviorVersion::latest())
@@ -176,7 +113,7 @@ pub(crate) fn categorize_dns_error(err: &anyhow::Error) -> DnsProviderErrorCateg
 
 #[cfg(test)]
 mod tests {
-    use super::{categorize_dns_error, DnsProviderErrorCategory};
+    use super::{DnsProviderErrorCategory, categorize_dns_error};
 
     #[test]
     fn categorizes_auth_errors() {

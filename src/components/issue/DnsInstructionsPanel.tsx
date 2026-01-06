@@ -2,50 +2,37 @@ import { Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { InstructionCard } from "./InstructionCard";
 import type { StartIssuanceResponse } from "../../lib/issuance";
-import type { PropagationResult } from "../../lib/dns";
 
 interface DnsInstructionsPanelProps {
-  statusMap: Record<string, PropagationResult | null>;
   hasManual: boolean;
   hasManaged: boolean;
   dnsModeLabel: string;
   manualRecords: StartIssuanceResponse["dns_records"];
-  checking: boolean;
   finalizing: boolean;
   awaitingManual: boolean;
-  dnsFailed: boolean;
   finalizeFailed: boolean;
   hasCertificate: boolean;
   onContinue: () => void;
-  onRetryDns: () => void;
   onRetryFinalize: () => void;
 }
 
 export function DnsInstructionsPanel({
-  statusMap,
   hasManual,
   hasManaged,
   dnsModeLabel,
   manualRecords,
-  checking,
   finalizing,
   awaitingManual,
-  dnsFailed,
   finalizeFailed,
   hasCertificate,
   onContinue,
-  onRetryDns,
   onRetryFinalize,
 }: DnsInstructionsPanelProps) {
   const dnsStatus = awaitingManual
     ? "Waiting on you"
-    : dnsFailed
-      ? "Needs retry"
-      : checking
-        ? "Running"
-        : hasCertificate
-          ? "Complete"
-          : "Queued";
+    : hasCertificate
+      ? "Complete"
+      : "Queued";
   const finalizeStatus = hasCertificate
     ? "Complete"
     : finalizeFailed
@@ -54,7 +41,6 @@ export function DnsInstructionsPanel({
         ? "Running"
         : "Queued";
   const showContinue = hasManual && awaitingManual;
-  const showRetryDns = dnsFailed;
   const showRetryFinalize = finalizeFailed;
 
   return (
@@ -71,15 +57,7 @@ export function DnsInstructionsPanel({
           <span className="text-xs font-semibold text-emerald-600">Complete</span>
         </div>
         <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-          <span className="flex items-center gap-2">
-            DNS verification
-            {checking && (
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Testing propagation
-              </span>
-            )}
-          </span>
+          <span>DNS verification</span>
           <span className="text-xs font-semibold">{dnsStatus}</span>
         </div>
         <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
@@ -105,24 +83,17 @@ export function DnsInstructionsPanel({
               <InstructionCard
                 key={recordKey}
                 record={rec}
-                status={statusMap[recordKey]}
               />
             );
           })}
         </div>
       )}
-      {(showContinue || showRetryDns || showRetryFinalize) && (
+      {(showContinue || showRetryFinalize) && (
         <div className="flex flex-wrap gap-3">
           {showContinue && (
-            <Button variant="secondary" onClick={() => void onContinue()} disabled={checking}>
-              {checking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button variant="secondary" onClick={() => void onContinue()} disabled={finalizing}>
+              {finalizing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Continue issuance
-            </Button>
-          )}
-          {showRetryDns && (
-            <Button variant="secondary" onClick={() => void onRetryDns()} disabled={checking}>
-              {checking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Retry DNS verification
             </Button>
           )}
           {showRetryFinalize && (

@@ -11,7 +11,6 @@ import { daysUntil } from "../components/certificates/certificate-utils";
 import {
   getCertificate,
   listCertificates,
-  seedFakeCertificate,
   type CertificateRecord,
 } from "../lib/certificates";
 
@@ -96,18 +95,6 @@ export function CertificatesPage() {
     }
   }
 
-  async function handleSeed() {
-    setLoadingList(true);
-    try {
-      await seedFakeCertificate();
-      await refreshList();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Unable to insert sample data";
-      setError(message);
-      setLoadingList(false);
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -143,7 +130,6 @@ export function CertificatesPage() {
         <CertificatesEmptyState
           onIssue={() => navigate("/issue")}
           onDiscover={() => navigate("/discover")}
-          onSeed={handleSeed}
         />
       ) : (
         <>

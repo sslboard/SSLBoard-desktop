@@ -1,7 +1,7 @@
 use tauri::{async_runtime::spawn_blocking, State};
 use log::debug;
 
-use crate::core::types::{CreateSecretRequest, SecretRefRecord, UpdateSecretRequest};
+use crate::core::types::SecretRefRecord;
 use crate::secrets::manager::SecretManager;
 
 /// Lists secret references (metadata only, no secret bytes).
@@ -16,75 +16,19 @@ pub async fn list_secret_refs(
         .map_err(|err| err.to_string())
 }
 
-/// Creates a new secret reference by sending the secret value into the trusted core once.
-#[tauri::command]
-pub async fn create_secret_ref(
-    manager: State<'_, SecretManager>,
-    create_req: CreateSecretRequest,
-) -> Result<SecretRefRecord, String> {
-    let manager = manager.inner().clone();
-    spawn_blocking(move || {
-        manager.create_secret(create_req.kind, create_req.label, create_req.secret_value)
-    })
-        .await
-        .map_err(|err| format!("Create join error: {err}"))?
-        .map_err(|err| err.to_string())
-}
-
-/// Updates an existing secret while keeping the reference id stable.
-#[tauri::command]
-pub async fn update_secret_ref(
-    manager: State<'_, SecretManager>,
-    update_req: UpdateSecretRequest,
-) -> Result<SecretRefRecord, String> {
-    let manager = manager.inner().clone();
-    spawn_blocking(move || {
-        manager.update_secret(&update_req.id, update_req.secret_value, update_req.label)
-    })
-        .await
-        .map_err(|err| format!("Update join error: {err}"))?
-        .map_err(|err| err.to_string())
-}
-
-/// Removes a secret reference and deletes the underlying secret from the OS store.
-#[tauri::command]
-pub async fn delete_secret_ref(
-    manager: State<'_, SecretManager>,
-    id: String,
-) -> Result<(), String> {
-    let manager = manager.inner().clone();
-    spawn_blocking(move || manager.delete_secret(&id))
-        .await
-        .map_err(|err| format!("Delete join error: {err}"))?
-        .map_err(|err| err.to_string())
-}
-
 /// Locks the secret vault, zeroizing the cached master key.
+/// Used internally for auto-lock functionality (idle timeout, window blur).
 #[tauri::command]
-pub async fn lock_vault(manager: State<'_, SecretManager>) -> Result<bool, String> {
+pub async fn lock_vault(manager: State<'_, SecretManager>) -> Result<(), String> {
     debug!(
         "[vault-cmd] lock_vault called, is_unlocked={}",
         manager.is_unlocked()
     );
     let manager = manager.inner().clone();
-    let result = spawn_blocking(move || {
+    spawn_blocking(move || {
         manager.lock();
-        Ok(false)
+        Ok(())
     })
     .await
-    .map_err(|err| format!("Lock vault join error: {err}"))?;
-    debug!("[vault-cmd] lock_vault result={:?}", result);
-    result
-}
-
-/// Returns whether the vault is currently unlocked.
-#[tauri::command]
-pub async fn is_vault_unlocked(manager: State<'_, SecretManager>) -> Result<bool, String> {
-    debug!("[vault-cmd] is_vault_unlocked called");
-    let manager = manager.inner().clone();
-    let result = spawn_blocking(move || Ok(manager.is_unlocked()))
-        .await
-        .map_err(|err| format!("Vault status join error: {err}"))?;
-    debug!("[vault-cmd] is_vault_unlocked result={:?}", result);
-    result
+    .map_err(|err| format!("Lock vault join error: {err}"))?
 }

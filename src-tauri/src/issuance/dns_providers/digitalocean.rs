@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{http, DnsProviderAdapter};
+use super::{http, retry_provider_verification, DnsProviderAdapter};
 
 pub struct DigitalOceanAdapter {
     api_token: String,
@@ -239,28 +239,31 @@ impl DigitalOceanAdapter {
                 record_ids.push(record.id);
             }
         }
-        let mut matched = false;
-        for _ in 0..5 {
-            for record_id in &record_ids {
-                if let Some(data) = self.fetch_record_data(*record_id)? {
-                    if Self::normalize_txt_content(&data) == expected_normalized {
-                        matched = true;
-                        break;
+
+        // Verify the record was created/updated correctly using unified retry logic
+        let domain = self.domain.clone();
+        let api_token = self.api_token.clone();
+        let record_ids_clone = record_ids.clone();
+        let expected_normalized_clone = expected_normalized.clone();
+        
+        retry_provider_verification(
+            record_name,
+            "DigitalOcean record verification",
+            Duration::from_secs(3),
+            Duration::from_millis(500),
+            move || {
+                // Create a temporary adapter to fetch record data
+                let temp_adapter = DigitalOceanAdapter::new(api_token.clone(), domain.clone());
+                for record_id in &record_ids_clone {
+                    if let Ok(Some(data)) = temp_adapter.fetch_record_data(*record_id) {
+                        if Self::normalize_txt_content(&data) == expected_normalized_clone {
+                            return Ok(true);
+                        }
                     }
                 }
-            }
-            if matched {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-        if !matched {
-            return Err(anyhow!(
-                "DigitalOcean record verification failed for {}",
-                record_name
-            ));
-        }
-        Ok(())
+                Ok(false)
+            },
+        )
     }
 
     fn delete_txt_record(&self, record_name: &str) -> Result<()> {

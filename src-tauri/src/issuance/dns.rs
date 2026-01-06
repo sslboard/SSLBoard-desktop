@@ -1,6 +1,8 @@
-use anyhow::{anyhow, Result};
-use log::{debug, warn};
+use anyhow::{Result, anyhow};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 /// Represents a DNS-01 challenge request.
@@ -54,7 +56,7 @@ impl ManualDnsAdapter {
         Self
     }
 
-    fn record_name(domain: &str) -> String {
+    pub fn record_name(domain: &str) -> String {
         let trimmed = domain.trim_end_matches('.');
         if trimmed.starts_with("_acme-challenge.") {
             trimmed.to_string()
@@ -63,60 +65,185 @@ impl ManualDnsAdapter {
         }
     }
 
-    fn query_txt(record_name: &str) -> Result<Vec<GoogleDnsResponse>> {
+    fn query_txt(
+        record_name: &str,
+        expected_value: Option<&str>,
+    ) -> Result<Vec<GoogleDnsResponse>> {
+        info!(
+            "[dns-test] Starting parallel DNS queries for {}",
+            record_name
+        );
         let urls = [
             (
+                "Google DNS",
                 format!("https://dns.google/resolve?name={record_name}&type=TXT&random_padding=x"),
                 Some("application/dns-json"),
             ),
             (
+                "Cloudflare DNS",
                 format!("https://cloudflare-dns.com/dns-query?name={record_name}&type=TXT"),
                 Some("application/dns-json"),
             ),
         ];
-        let agent = ureq::AgentBuilder::new()
-            .timeout(resolve_dns_timeout())
-            .build();
-        let mut results = Vec::new();
-        for (url, accept) in urls {
-            let mut req = agent.get(&url);
-            if let Some(accept) = accept {
-                req = req.set("Accept", accept);
-            }
-            match req.call() {
-                Ok(resp) => {
-                    if let Ok(body) = resp.into_string() {
-                        match serde_json::from_str::<GoogleDnsResponse>(&body) {
-                            Ok(parsed) => results.push(parsed),
+
+        let timeout = resolve_dns_timeout();
+        let (tx, rx) = mpsc::channel();
+
+        // Spawn parallel queries
+        for (resolver_name, url, accept) in urls {
+            let tx = tx.clone();
+            let url_clone = url.clone();
+            let record_name_clone = record_name.to_string();
+            let resolver_name_clone = resolver_name.to_string();
+            let expected_value_clone = expected_value.map(|s| s.to_string());
+
+            thread::spawn(move || {
+                info!(
+                    "[dns-test] Querying {} for {}",
+                    resolver_name_clone, record_name_clone
+                );
+                let agent = ureq::AgentBuilder::new().timeout(timeout).build();
+
+                let mut req = agent.get(&url_clone);
+                if let Some(accept) = accept {
+                    req = req.set("Accept", accept);
+                }
+
+                let result = match req.call() {
+                    Ok(resp) => {
+                        match resp.into_string() {
+                            Ok(body) => {
+                                match serde_json::from_str::<GoogleDnsResponse>(&body) {
+                                    Ok(parsed) => {
+                                        info!(
+                                            "[dns-test] {} responded: status={}, has_answer={}",
+                                            resolver_name_clone,
+                                            parsed.status,
+                                            parsed.answer.is_some()
+                                        );
+
+                                        // Check if this response contains the expected value
+                                        if let Some(expected) = &expected_value_clone {
+                                            if let Some(answers) = &parsed.answer {
+                                                for ans in answers {
+                                                    if let Some(data) = &ans.data {
+                                                        let trimmed = trim_txt_quotes(data);
+                                                        if trimmed == *expected {
+                                                            info!(
+                                                                "[dns-test] {} found expected value!",
+                                                                resolver_name_clone
+                                                            );
+                                                            // Send success immediately
+                                                            let _ = tx.send(Ok((
+                                                                resolver_name_clone,
+                                                                parsed,
+                                                            )));
+                                                            return;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Ok((resolver_name_clone, parsed))
+                                    }
+                                    Err(err) => {
+                                        warn!(
+                                            "[dns-test] {} parse failed for {} via {}: {}",
+                                            resolver_name_clone, record_name_clone, url_clone, err
+                                        );
+                                        Err(anyhow!("parse failed: {}", err))
+                                    }
+                                }
+                            }
                             Err(err) => {
-                                warn!("[dns] parse failed for {record_name} via {url}: {err}")
+                                warn!(
+                                    "[dns-test] {} body read failed for {}: {}",
+                                    resolver_name_clone, record_name_clone, err
+                                );
+                                Err(anyhow!("body read failed: {}", err))
                             }
                         }
                     }
+                    Err(err) => {
+                        warn!(
+                            "[dns-test] {} query failed for {} via {}: {}",
+                            resolver_name_clone, record_name_clone, url_clone, err
+                        );
+                        Err(anyhow!("query failed: {}", err))
+                    }
+                };
+
+                let _ = tx.send(result);
+            });
+        }
+
+        drop(tx); // Close sender so receiver knows when all threads are done
+
+        let mut results = Vec::new();
+
+        // Collect results, returning early if we find the expected value
+        for received in rx {
+            match received {
+                Ok((resolver_name, response)) => {
+                    // Check if this response has the expected value
+                    if let Some(expected) = expected_value {
+                        if let Some(answers) = &response.answer {
+                            for ans in answers {
+                                if let Some(data) = &ans.data {
+                                    let trimmed = trim_txt_quotes(data);
+                                    if trimmed == expected {
+                                        info!(
+                                            "[dns-test] Found expected value via {}, returning immediately",
+                                            resolver_name
+                                        );
+                                        return Ok(vec![response]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    results.push(response);
                 }
                 Err(err) => {
-                    warn!("[dns] resolver query failed for {record_name} via {url}: {err}");
+                    debug!("[dns-test] One resolver failed: {}", err);
                 }
             }
         }
+
         if results.is_empty() {
+            warn!("[dns-test] All DNS queries failed for {}", record_name);
             Err(anyhow!(
                 "dns query failed for {record_name} across resolvers"
             ))
         } else {
+            info!(
+                "[dns-test] Collected {} response(s) for {}",
+                results.len(),
+                record_name
+            );
             Ok(results)
         }
     }
 }
 
 pub fn check_txt_record(record_name: &str, expected_value: &str) -> Result<DnsPropagationResult> {
-    let responses = ManualDnsAdapter::query_txt(record_name)?;
+    info!(
+        "[dns-test] Checking TXT record {} for value {}",
+        record_name, expected_value
+    );
+    let responses = ManualDnsAdapter::query_txt(record_name, Some(expected_value))?;
     let req = DnsChallengeRequest {
         domain: record_name.to_string(),
         value: expected_value.to_string(),
         zone: None,
     };
-    Ok(interpret_dns_results(&responses, &req))
+    let result = interpret_dns_results(&responses, &req);
+    info!(
+        "[dns-test] DNS check result for {}: state={:?}, observed={:?}",
+        record_name, result.state, result.observed_values
+    );
+    Ok(result)
 }
 
 impl DnsAdapter for ManualDnsAdapter {
@@ -137,7 +264,7 @@ impl DnsAdapter for ManualDnsAdapter {
 
     fn check_propagation(&self, req: &DnsChallengeRequest) -> Result<DnsPropagationResult> {
         let record_name = Self::record_name(&req.domain);
-        let responses = Self::query_txt(&record_name)?;
+        let responses = Self::query_txt(&record_name, Some(&req.value))?;
         debug!(
             "[dns] checked {record_name}: statuses={:?} answers={:?}",
             responses.iter().map(|r| r.status).collect::<Vec<_>>(),
@@ -283,9 +410,11 @@ mod tests {
         }];
         let result = interpret_dns_results(&responses, &make_req());
         assert!(matches!(result.state, PropagationState::Found));
-        assert!(result
-            .observed_values
-            .contains(&"expected-value".to_string()));
+        assert!(
+            result
+                .observed_values
+                .contains(&"expected-value".to_string())
+        );
     }
 
     #[test]
@@ -361,7 +490,7 @@ mod tests {
     #[ignore]
     fn resolves_live_txt_for_ezs3_net() -> Result<()> {
         let record_name = ManualDnsAdapter::record_name("test.ezs3.net");
-        let responses = ManualDnsAdapter::query_txt(&record_name)?;
+        let responses = ManualDnsAdapter::query_txt(&record_name, None)?;
         let req = DnsChallengeRequest {
             domain: "test.ezs3.net".into(),
             value: "cj9WcLQwCB5xDkgRQ312yXLGko4p9WY-oQjML_T7DIQ".into(),
