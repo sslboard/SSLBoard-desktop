@@ -5,16 +5,15 @@
 //! retrieval, and basic inventory management operations.
 
 use std::{
-    fs,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::MutexGuard,
 };
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{Duration, Utc};
-use rusqlite::{params, Connection, OpenFlags, Row};
-use tauri::{AppHandle, Manager};
+use rusqlite::{params, Connection, Row};
 
 use crate::core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve};
+use crate::storage::db::Db;
 
 /// SQLite-based storage for certificate inventory data.
 /// Provides thread-safe access to certificate records with CRUD operations.
@@ -24,152 +23,12 @@ use crate::core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, Key
 /// thread safety across async operations.
 #[derive(Clone)]
 pub struct InventoryStore {
-    conn: Arc<Mutex<Connection>>,
+    db: Db,
 }
 
 impl InventoryStore {
-    /// Creates and initializes a new inventory store instance.
-    ///
-    /// This method sets up the SQLite database in the application's data directory,
-    /// configures connection settings for optimal performance and safety,
-    /// and initializes the database schema if it doesn't exist.
-    ///
-    /// # Arguments
-    /// * `app` - Tauri application handle for accessing the data directory
-    ///
-    /// # Returns
-    /// A Result containing the initialized InventoryStore or an error
-    ///
-    /// # Errors
-    /// Returns an error if the app data directory cannot be resolved,
-    /// the database file cannot be created/opened, or schema initialization fails.
-    pub fn initialize(app: AppHandle) -> Result<Self> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .context("failed to resolve app data dir")?;
-        fs::create_dir_all(&data_dir)?;
-
-        let db_path = data_dir.join("inventory.sqlite");
-        let conn = Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
-        )
-        .with_context(|| format!("failed to open SQLite database at {}", db_path.display()))?;
-
-        Self::configure_connection(&conn)?;
-        Self::init_schema(&conn)?;
-        Self::migrate_schema(&conn)?;
-
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
-    }
-
-    /// Configures SQLite connection settings for optimal performance and safety.
-    ///
-    /// Sets up Write-Ahead Logging (WAL) mode for better concurrent access
-    /// and enables foreign key constraints for data integrity.
-    ///
-    /// # Arguments
-    /// * `conn` - The SQLite connection to configure
-    ///
-    /// # Returns
-    /// A Result indicating success or failure of configuration
-    fn configure_connection(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode = WAL;
-            PRAGMA foreign_keys = ON;
-            "#,
-        )?;
-        Ok(())
-    }
-
-    /// Initializes the database schema if it doesn't already exist.
-    ///
-    /// Creates the certificate_records table with all necessary columns
-    /// for storing certificate metadata. Uses IF NOT EXISTS to avoid
-    /// errors on subsequent runs.
-    ///
-    /// # Arguments
-    /// * `conn` - The SQLite connection to initialize
-    ///
-    /// # Returns
-    /// A Result indicating success or failure of schema creation
-    fn init_schema(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS certificate_records (
-                id TEXT PRIMARY KEY,
-                subjects TEXT NOT NULL,
-                sans TEXT NOT NULL,
-                issuer TEXT NOT NULL,
-                serial TEXT NOT NULL,
-                not_before TEXT NOT NULL,
-                not_after TEXT NOT NULL,
-                fingerprint TEXT NOT NULL,
-                source TEXT NOT NULL,
-                domain_roots TEXT NOT NULL,
-                tags TEXT NOT NULL,
-                managed_key_ref TEXT,
-                chain_pem TEXT,
-                key_algorithm TEXT,
-                key_size INTEGER,
-                key_curve TEXT
-            );
-            "#,
-        )?;
-        Ok(())
-    }
-
-    /// Applies lightweight schema migrations for new columns.
-    fn migrate_schema(conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(certificate_records)")?;
-        let mut rows = stmt.query([])?;
-        let mut existing = Vec::new();
-        while let Some(row) = rows.next()? {
-            let name: String = row.get(1)?;
-            existing.push(name);
-        }
-        if !existing.iter().any(|c| c == "managed_key_ref") {
-            conn.execute(
-                "ALTER TABLE certificate_records ADD COLUMN managed_key_ref TEXT",
-                [],
-            )
-            .context("failed to add managed_key_ref column")?;
-        }
-        if !existing.iter().any(|c| c == "chain_pem") {
-            conn.execute(
-                "ALTER TABLE certificate_records ADD COLUMN chain_pem TEXT",
-                [],
-            )
-            .context("failed to add chain_pem column")?;
-        }
-        if !existing.iter().any(|c| c == "key_algorithm") {
-            conn.execute(
-                "ALTER TABLE certificate_records ADD COLUMN key_algorithm TEXT",
-                [],
-            )
-            .context("failed to add key_algorithm column")?;
-        }
-        if !existing.iter().any(|c| c == "key_size") {
-            conn.execute(
-                "ALTER TABLE certificate_records ADD COLUMN key_size INTEGER",
-                [],
-            )
-            .context("failed to add key_size column")?;
-        }
-        if !existing.iter().any(|c| c == "key_curve") {
-            conn.execute(
-                "ALTER TABLE certificate_records ADD COLUMN key_curve TEXT",
-                [],
-            )
-            .context("failed to add key_curve column")?;
-        }
-        Ok(())
+    pub fn initialize(db: Db) -> Result<Self> {
+        Ok(Self { db })
     }
 
     /// Retrieves all certificate records from the inventory.
@@ -423,9 +282,7 @@ impl InventoryStore {
     /// # Errors
     /// Returns an error if the mutex has been poisoned by a previous panic
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn
-            .lock()
-            .map_err(|err| anyhow!("SQLite connection poisoned: {err}"))
+        self.db.lock_conn()
     }
 }
 

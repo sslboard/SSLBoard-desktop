@@ -1,13 +1,11 @@
 use std::{
-    fs,
-    path::Path,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::MutexGuard,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Row};
-use tauri::{AppHandle, Manager};
+use rusqlite::{params, Connection, OptionalExtension, Row};
+use crate::storage::db::Db;
 
 #[derive(Clone, Debug)]
 pub struct PreferenceRecord {
@@ -19,36 +17,12 @@ pub struct PreferenceRecord {
 
 #[derive(Clone)]
 pub struct PreferencesStore {
-    conn: Arc<Mutex<Connection>>,
+    db: Db,
 }
 
 impl PreferencesStore {
-    pub fn initialize(app: AppHandle) -> Result<Self> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .context("failed to resolve app data dir")?;
-        Self::initialize_with_path(&data_dir)
-    }
-
-    fn initialize_with_path(data_dir: &Path) -> Result<Self> {
-        fs::create_dir_all(data_dir)?;
-
-        let db_path = data_dir.join("preferences.sqlite");
-        let conn = Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
-        )
-        .with_context(|| format!("failed to open SQLite database at {}", db_path.display()))?;
-
-        Self::configure_connection(&conn)?;
-        Self::init_schema(&conn)?;
-
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
+    pub fn initialize(db: Db) -> Result<Self> {
+        Ok(Self { db })
     }
 
     pub fn get(&self, name: &str) -> Result<Option<PreferenceRecord>> {
@@ -90,29 +64,6 @@ impl PreferencesStore {
             .ok_or_else(|| anyhow!("preference not found after upsert: {name}"))
     }
 
-    fn configure_connection(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode = WAL;
-            PRAGMA foreign_keys = ON;
-            "#,
-        )?;
-        Ok(())
-    }
-
-    fn init_schema(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS preferences (
-                name TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            "#,
-        )?;
-        Ok(())
-    }
-
     fn get_with_conn(conn: &Connection, name: &str) -> Result<Option<PreferenceRecord>> {
         let mut stmt = conn.prepare(
             r#"
@@ -147,8 +98,8 @@ impl PreferencesStore {
     }
 
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn
-            .lock()
+        self.db
+            .lock_conn()
             .map_err(|err| anyhow!("preferences db mutex poisoned: {err}"))
     }
 }
@@ -169,7 +120,8 @@ mod tests {
     #[test]
     fn preference_upsert_and_get() -> Result<()> {
         let temp_dir = create_temp_dir()?;
-        let store = PreferencesStore::initialize_with_path(&temp_dir)?;
+        let db = Db::initialize_with_path(&temp_dir)?;
+        let store = PreferencesStore::initialize(db)?;
 
         assert!(store.get("export_destination")?.is_none());
 

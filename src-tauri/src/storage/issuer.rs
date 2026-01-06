@@ -5,17 +5,17 @@
 //! alongside other local metadata without exposing secrets.
 
 use std::{
-    fs,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::MutexGuard,
 };
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use log::debug;
-use rusqlite::{params, Connection, OpenFlags, Row};
+use rusqlite::{params, Connection, Row};
 use serde_json::json;
-use tauri::{AppHandle, Manager};
 use uuid::Uuid;
+
+use crate::storage::db::Db;
 
 #[derive(Clone, Debug)]
 pub struct IssuerConfigRecord {
@@ -36,34 +36,12 @@ pub struct IssuerConfigRecord {
 /// SQLite-backed issuer configuration store.
 #[derive(Clone)]
 pub struct IssuerConfigStore {
-    conn: Arc<Mutex<Connection>>,
+    db: Db,
 }
 
 impl IssuerConfigStore {
-    pub fn initialize(app: AppHandle) -> Result<Self> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .context("failed to resolve app data dir")?;
-        fs::create_dir_all(&data_dir)?;
-
-        let db_path = data_dir.join("issuance.sqlite");
-        let conn = Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
-        )
-        .with_context(|| format!("failed to open SQLite database at {}", db_path.display()))?;
-
-        Self::configure_connection(&conn)?;
-        Self::init_schema(&conn)?;
-        Self::ensure_columns(&conn)?;
-        Self::backfill_params_json(&conn)?;
-
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
+    pub fn initialize(db: Db) -> Result<Self> {
+        Ok(Self { db })
     }
 
     pub fn list(&self) -> Result<Vec<IssuerConfigRecord>> {
@@ -227,16 +205,6 @@ impl IssuerConfigStore {
         Ok(())
     }
 
-    fn configure_connection(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode = WAL;
-            PRAGMA foreign_keys = ON;
-            "#,
-        )?;
-        Ok(())
-    }
-
     fn query_all(conn: &Connection) -> Result<Vec<IssuerConfigRecord>> {
         let mut stmt = conn.prepare(
             r#"
@@ -273,77 +241,6 @@ impl IssuerConfigStore {
         }
     }
 
-    fn init_schema(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS issuer_configs (
-                issuer_id TEXT PRIMARY KEY,
-                label TEXT NOT NULL,
-                directory_url TEXT NOT NULL,
-                environment TEXT NOT NULL,
-                issuer_type TEXT NOT NULL DEFAULT 'acme',
-                params_json TEXT NOT NULL DEFAULT '{}',
-                contact_email TEXT,
-                account_key_ref TEXT,
-                tos_agreed INTEGER NOT NULL DEFAULT 0,
-                is_selected INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            "#,
-        )?;
-        Ok(())
-    }
-
-    fn ensure_columns(conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(issuer_configs)")?;
-        let columns = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<String>, _>>()?;
-
-        if !columns.iter().any(|col| col == "issuer_type") {
-            conn.execute(
-                "ALTER TABLE issuer_configs ADD COLUMN issuer_type TEXT NOT NULL DEFAULT 'acme'",
-                [],
-            )?;
-        }
-        if !columns.iter().any(|col| col == "params_json") {
-            conn.execute(
-                "ALTER TABLE issuer_configs ADD COLUMN params_json TEXT NOT NULL DEFAULT '{}'",
-                [],
-            )?;
-        }
-
-        Ok(())
-    }
-
-    fn backfill_params_json(conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT issuer_id, directory_url, environment
-            FROM issuer_configs
-            WHERE params_json IS NULL OR params_json = ''
-            "#,
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
-
-        for row in rows {
-            let (issuer_id, directory_url, environment) = row?;
-            let params_json = Self::build_params_json(&directory_url, &environment)?;
-            conn.execute(
-                "UPDATE issuer_configs SET params_json = ?2 WHERE issuer_id = ?1",
-                params![issuer_id, params_json],
-            )?;
-        }
-        Ok(())
-    }
-
     fn row_to_record(row: &Row<'_>) -> Result<IssuerConfigRecord> {
         let created_at_raw: String = row.get(10)?;
         let updated_at_raw: String = row.get(11)?;
@@ -377,8 +274,6 @@ impl IssuerConfigStore {
     }
 
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn
-            .lock()
-            .map_err(|err| anyhow!("SQLite connection poisoned: {err}"))
+        self.db.lock_conn()
     }
 }

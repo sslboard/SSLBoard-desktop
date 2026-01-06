@@ -1,153 +1,22 @@
 use std::{
-    fs,
-    path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::MutexGuard,
 };
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OpenFlags, Row};
-use tauri::{AppHandle, Manager};
-
-#[cfg(windows)]
-unsafe extern "system" {
-    fn SetFileAttributesW(path: *const u16, attributes: u32) -> i32;
-}
+use rusqlite::{params, Connection, Row};
 
 use super::types::SecretMetadata;
+use crate::storage::db::Db;
 
 #[derive(Clone)]
 pub struct SecretMetadataStore {
-    conn: Arc<Mutex<Connection>>,
+    db: Db,
 }
 
 impl SecretMetadataStore {
-    pub fn initialize(app: AppHandle) -> Result<Self> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .context("failed to resolve app data dir")?;
-        fs::create_dir_all(&data_dir)?;
-
-        let db_path = data_dir.join("secrets.sqlite");
-        let created = !db_path.exists();
-        let conn = Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
-        )
-        .with_context(|| format!("failed to open secrets db at {}", db_path.display()))?;
-
-        Self::configure_connection(&conn)?;
-        Self::init_schema(&conn)?;
-        Self::migrate_dns_credentials(&conn)?;
-        Self::enforce_permissions(&db_path, created)?;
-
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
-    }
-
-    fn configure_connection(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode = WAL;
-            PRAGMA foreign_keys = ON;
-            "#,
-        )?;
-        Ok(())
-    }
-
-    fn init_schema(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS secret_metadata (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                label TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                ciphertext BLOB
-            );
-            "#,
-        )?;
-        if !Self::column_exists(conn, "secret_metadata", "ciphertext")? {
-            conn.execute("ALTER TABLE secret_metadata ADD COLUMN ciphertext BLOB", [])?;
-        }
-        Ok(())
-    }
-
-    fn migrate_dns_credentials(conn: &Connection) -> Result<()> {
-        conn.execute(
-            "UPDATE secret_metadata SET kind = 'dns_provider_token' WHERE kind = 'dns_credential'",
-            [],
-        )?;
-        Ok(())
-    }
-
-    fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
-        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            let name: String = row.get(1)?;
-            if name.eq_ignore_ascii_case(column) {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    #[cfg(unix)]
-    fn enforce_permissions(db_path: &PathBuf, created: bool) -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
-        let desired = fs::Permissions::from_mode(0o600);
-        if created {
-            fs::set_permissions(db_path, desired)?;
-        } else {
-            let metadata = fs::metadata(db_path)?;
-            let current = metadata.permissions();
-            if current.mode() & 0o177 != 0 {
-                fs::set_permissions(db_path, desired)?;
-            }
-        }
-        Ok(())
-    }
-
-    #[cfg(not(unix))]
-    fn enforce_permissions(db_path: &PathBuf, _created: bool) -> Result<()> {
-        #[cfg(windows)]
-        {
-            use std::os::windows::ffi::OsStrExt;
-
-            const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
-            const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x20;
-            const FILE_ATTRIBUTE_NOT_CONTENT_INDEXED: u32 = 0x2000;
-
-            let wide: Vec<u16> = db_path
-                .as_os_str()
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-
-            unsafe {
-                if SetFileAttributesW(
-                    wide.as_ptr(),
-                    FILE_ATTRIBUTE_HIDDEN
-                        | FILE_ATTRIBUTE_ARCHIVE
-                        | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
-                ) == 0
-                {
-                    log::warn!(
-                        "[secrets] warning: failed to harden Windows file attributes for {}: {}",
-                        db_path.display(),
-                        std::io::Error::last_os_error()
-                    );
-                }
-            }
-        }
-
-        Ok(())
+    pub fn initialize(db: Db) -> Result<Self> {
+        Ok(Self { db })
     }
 
     pub fn store_ciphertext(&self, id: &str, ciphertext: &[u8]) -> Result<()> {
@@ -300,8 +169,8 @@ impl SecretMetadataStore {
     }
 
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn
-            .lock()
+        self.db
+            .lock_conn()
             .map_err(|err| anyhow!("secrets db mutex poisoned: {err}"))
     }
 }

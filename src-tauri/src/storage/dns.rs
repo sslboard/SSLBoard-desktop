@@ -1,16 +1,16 @@
 use std::{
     collections::HashMap,
-    fs,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::MutexGuard,
 };
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use log::warn;
-use rusqlite::{params, Connection, OpenFlags, Row};
+use rusqlite::{params, Connection, Row};
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
 use uuid::Uuid;
+
+use crate::storage::db::Db;
 
 #[derive(Clone, Debug)]
 pub struct DnsProvider {
@@ -34,33 +34,16 @@ pub struct DnsProviderResolution {
 /// Stores DNS provider configurations and resolves providers for DNS challenges.
 #[derive(Clone)]
 pub struct DnsConfigStore {
-    conn: Arc<Mutex<Connection>>,
+    db: Db,
 }
 
 impl DnsConfigStore {
-    pub fn initialize(app: AppHandle) -> Result<Self> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .context("failed to resolve app data dir")?;
-        fs::create_dir_all(&data_dir)?;
-
-        let db_path = data_dir.join("issuance.sqlite");
-        let conn = Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_FULL_MUTEX,
-        )
-        .with_context(|| format!("failed to open SQLite database at {}", db_path.display()))?;
-
-        Self::configure_connection(&conn)?;
-        Self::init_schema(&conn)?;
-        Self::migrate_zone_mappings(&conn)?;
-
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
+    pub fn initialize(db: Db) -> Result<Self> {
+        {
+            let conn = db.lock_conn()?;
+            Self::migrate_zone_mappings(&conn)?;
+        }
+        Ok(Self { db })
     }
 
     pub fn list_providers(&self) -> Result<Vec<DnsProvider>> {
@@ -259,34 +242,6 @@ impl DnsConfigStore {
             matched_suffix: Some(matched_suffix),
             ambiguous,
         })
-    }
-
-    fn configure_connection(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode = WAL;
-            PRAGMA foreign_keys = ON;
-            "#,
-        )?;
-        Ok(())
-    }
-
-    fn init_schema(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS dns_providers (
-                id TEXT PRIMARY KEY,
-                provider_type TEXT NOT NULL,
-                label TEXT NOT NULL,
-                domain_suffixes TEXT NOT NULL,
-                secret_ref TEXT,
-                config_json TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            "#,
-        )?;
-        Ok(())
     }
 
     fn migrate_zone_mappings(conn: &Connection) -> Result<()> {
@@ -533,9 +488,7 @@ impl DnsConfigStore {
     }
 
     fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn
-            .lock()
-            .map_err(|err| anyhow!("SQLite connection poisoned: {err}"))
+        self.db.lock_conn()
     }
 }
 

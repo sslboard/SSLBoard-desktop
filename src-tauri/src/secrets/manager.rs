@@ -14,6 +14,7 @@ use super::{
 };
 use tauri::Emitter;
 use zeroize::Zeroizing;
+use crate::storage::db::Db;
 
 #[derive(thiserror::Error, Debug)]
 pub enum SecretError {
@@ -55,8 +56,8 @@ pub struct SecretManager {
 }
 
 impl SecretManager {
-    pub fn initialize(app: tauri::AppHandle) -> Result<Self> {
-        let metadata = SecretMetadataStore::initialize(app.clone())?;
+    pub fn initialize(app: tauri::AppHandle, db: Db) -> Result<Self> {
+        let metadata = SecretMetadataStore::initialize(db)?;
         let master_key_store = create_master_key_store("sslboard-desktop");
         let vault = Arc::new(MasterKeyVault::new(master_key_store));
         let encrypted_store: Arc<dyn SecretStore> =

@@ -14,6 +14,7 @@ use core::commands::{
 use secrets::manager::SecretManager;
 use std::sync::Once;
 use storage::{
+    db::Db,
     dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore,
     preferences::PreferencesStore,
 };
@@ -26,23 +27,26 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let inventory_store = InventoryStore::initialize(app.handle().clone())?;
+            let db = Db::initialize(app.handle().clone())?;
+            app.manage(db.clone());
+
+            let inventory_store = InventoryStore::initialize(db.clone())?;
             if cfg!(debug_assertions) {
                 // Seed a demo record for manual testing in development builds.
                 inventory_store.seed_dev_certificate()?;
             }
             app.manage(inventory_store);
 
-            let secret_manager = SecretManager::initialize(app.handle().clone())?;
+            let secret_manager = SecretManager::initialize(app.handle().clone(), db.clone())?;
             app.manage(secret_manager);
 
-            let issuer_store = IssuerConfigStore::initialize(app.handle().clone())?;
+            let issuer_store = IssuerConfigStore::initialize(db.clone())?;
             app.manage(issuer_store);
 
-            let dns_store = DnsConfigStore::initialize(app.handle().clone())?;
+            let dns_store = DnsConfigStore::initialize(db.clone())?;
             app.manage(dns_store);
 
-            let preferences_store = PreferencesStore::initialize(app.handle().clone())?;
+            let preferences_store = PreferencesStore::initialize(db)?;
             app.manage(preferences_store);
             Ok(())
         })
