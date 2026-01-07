@@ -32,7 +32,7 @@ pub async fn dns_provider_test(
         // Generate test record details
         let suffix = provider
             .domain_suffixes
-            .get(0)
+            .first()
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("provider has no domain suffixes"))?;
         let random = Uuid::new_v4().as_simple().to_string();

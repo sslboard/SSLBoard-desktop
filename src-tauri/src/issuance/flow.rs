@@ -18,7 +18,7 @@ use x509_parser::pem::parse_x509_pem;
 use crate::{
     core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve},
     issuance::acme_workflow,
-    issuance::dns::{DnsRecordInstruction, ManualDnsAdapter, PropagationState},
+    issuance::dns::{record_name, DnsRecordInstruction, PropagationState},
     issuance::dns_providers::{adapter_for_provider, poll_dns_propagation},
     secrets::{manager::SecretManager, types::SecretKind},
     storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
@@ -79,6 +79,7 @@ fn sessions() -> &'static Mutex<HashMap<String, PendingIssuance>> {
 }
 
 /// Starts a managed-key ACME DNS-01 issuance and returns DNS instructions plus a request id.
+#[allow(clippy::too_many_arguments)]
 pub fn start_managed_dns01(
     domains: Vec<String>,
     issuer_id: String,
@@ -126,7 +127,7 @@ pub fn start_managed_dns01(
         acme_workflow::prepare_dns_challenges(&new_order, dns_store, secrets)?;
 
     let primary = normalized
-        .get(0)
+        .first()
         .cloned()
         .ok_or_else(|| anyhow!("primary domain missing"))?;
     let key_pem_str =
@@ -197,7 +198,7 @@ pub fn complete_managed_dns01(
         // Poll for DNS propagation with retries using unified retry logic
         let timeout = Duration::from_secs(30);
         let interval = Duration::from_secs(2);
-        let record_name = ManualDnsAdapter::record_name(&domain);
+        let record_name = record_name(&domain);
 
         let propagation_result = poll_dns_propagation(&record_name, &proof, timeout, interval)?;
 
@@ -284,24 +285,23 @@ pub fn complete_managed_dns01(
     for (domain, record_name) in dns_records_to_cleanup {
         match dns_store.resolve_provider_for_domain(&domain) {
             Ok(resolution) => {
-                if let Some(provider) = resolution.provider.as_ref() {
-                    if resolution.ambiguous.len() <= 1 {
-                        let provider_adapter = adapter_for_provider(provider, secrets);
-                        if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
-                            // Log but don't fail issuance if cleanup fails
-                            log::warn!(
-                                "[dns] Failed to cleanup TXT record {} for domain {}: {}",
-                                record_name,
-                                domain,
-                                err
-                            );
-                        } else {
-                            log::debug!(
-                                "[dns] Successfully cleaned up TXT record {} for domain {}",
-                                record_name,
-                                domain
-                            );
-                        }
+                if let Some(provider) = resolution.provider.as_ref()
+                    && resolution.ambiguous.len() <= 1 {
+                    let provider_adapter = adapter_for_provider(provider, secrets);
+                    if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
+                        // Log but don't fail issuance if cleanup fails
+                        log::warn!(
+                            "[dns] Failed to cleanup TXT record {} for domain {}: {}",
+                            record_name,
+                            domain,
+                            err
+                        );
+                    } else {
+                        log::debug!(
+                            "[dns] Successfully cleaned up TXT record {} for domain {}",
+                            record_name,
+                            domain
+                        );
                     }
                 }
             }

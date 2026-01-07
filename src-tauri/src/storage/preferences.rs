@@ -1,11 +1,9 @@
-use std::{
-    sync::MutexGuard,
-};
+use std::sync::MutexGuard;
 
-use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::storage::db::Db;
+use anyhow::{Result, anyhow};
+use chrono::{DateTime, Utc};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 #[derive(Clone, Debug)]
 pub struct PreferenceRecord {
@@ -36,7 +34,7 @@ impl PreferencesStore {
         )?;
 
         let record = stmt
-            .query_row(params![name], |row| Self::row_to_record(row))
+            .query_row(params![name], Self::row_to_record)
             .optional()?;
         Ok(record)
     }
@@ -74,7 +72,7 @@ impl PreferencesStore {
         )?;
 
         let record = stmt
-            .query_row(params![name], |row| Self::row_to_record(row))
+            .query_row(params![name], Self::row_to_record)
             .optional()?;
         Ok(record)
     }

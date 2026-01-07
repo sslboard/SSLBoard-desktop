@@ -1,8 +1,3 @@
-## RENAMED Requirements
-
-- FROM: `### Requirement: Secrets database strict file permissions`
-- TO: `### Requirement: Application database strict file permissions`
-
 ## MODIFIED Requirements
 
 ### Requirement: Application database strict file permissions

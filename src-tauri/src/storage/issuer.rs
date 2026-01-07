@@ -65,6 +65,7 @@ impl IssuerConfigStore {
         Self::get_with_conn(&conn, issuer_id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
         label: String,

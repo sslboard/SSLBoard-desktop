@@ -83,7 +83,7 @@ impl DigitalOceanAdapter {
         let relative_name = self.to_relative_name(record_name);
         let client = http::HttpClient::shared();
         let response = client
-            .get(&format!(
+            .get(format!(
                 "https://api.digitalocean.com/v2/domains/{}/records?type=TXT&name={}",
                 self.domain, relative_name
             ))
@@ -107,7 +107,7 @@ impl DigitalOceanAdapter {
     fn fetch_record_data(&self, record_id: u64) -> Result<Option<String>> {
         let client = http::HttpClient::shared();
         let response = client
-            .get(&format!(
+            .get(format!(
                 "https://api.digitalocean.com/v2/domains/{}/records/{}",
                 self.domain, record_id
             ))
@@ -144,7 +144,7 @@ impl DigitalOceanAdapter {
         };
 
         let response = client
-            .post(&format!(
+            .post(format!(
                 "https://api.digitalocean.com/v2/domains/{}/records",
                 self.domain
             ))
@@ -172,7 +172,7 @@ impl DigitalOceanAdapter {
     fn delete_txt_record_atomic(&self, record_id: u64) -> Result<()> {
         let client = http::HttpClient::shared();
         let delete_response = client
-            .delete(&format!(
+            .delete(format!(
                 "https://api.digitalocean.com/v2/domains/{}/records/{}",
                 self.domain, record_id
             ))

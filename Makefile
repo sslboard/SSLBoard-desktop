@@ -8,6 +8,7 @@ tests:
 
 check:
 	cargo check --manifest-path src-tauri/Cargo.toml
+	cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 dev:
 	RUST_LOG=debug npm run tauri dev

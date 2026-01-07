@@ -4,13 +4,11 @@
 //! using SQLite as the backend. It handles certificate metadata storage,
 //! retrieval, and basic inventory management operations.
 
-use std::{
-    sync::MutexGuard,
-};
+use std::sync::MutexGuard;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::{Duration, Utc};
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 
 use crate::core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve};
 use crate::storage::db::Db;
@@ -230,11 +228,11 @@ impl InventoryStore {
         let source_raw: String = row.get(8)?;
         let domain_roots_raw: String = row.get(9)?;
         let tags_raw: String = row.get(10)?;
-        let managed_key_ref: Option<String> = row.get(11).unwrap_or(None);
-        let chain_pem: Option<String> = row.get(12).unwrap_or(None);
-        let key_algorithm_raw: Option<String> = row.get(13).unwrap_or(None);
-        let key_size: Option<u16> = row.get(14).unwrap_or(None);
-        let key_curve_raw: Option<String> = row.get(15).unwrap_or(None);
+        let managed_key_ref: Option<String> = row.get(11)?;
+        let chain_pem: Option<String> = row.get(12)?;
+        let key_algorithm_raw: Option<String> = row.get(13)?;
+        let key_size: Option<u16> = row.get(14)?;
+        let key_curve_raw: Option<String> = row.get(15)?;
 
         let source = match source_raw.as_str() {
             "External" => CertificateSource::External,

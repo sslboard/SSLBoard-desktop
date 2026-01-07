@@ -1,12 +1,9 @@
-use std::{
-    collections::HashMap,
-    sync::MutexGuard,
-};
+use std::{collections::HashMap, sync::MutexGuard};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
 use log::warn;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -222,20 +219,18 @@ impl DnsConfigStore {
                 .then_with(|| a_provider.id.cmp(&b_provider.id))
         });
 
-        let best_suffix_len = matches
+        let first_match = matches
             .first()
-            .map(|(_, suffix)| suffix.len())
-            .unwrap_or_default();
+            .expect("matches should not be empty after empty check");
+        let best_suffix_len = first_match.1.len();
+
         let ambiguous: Vec<DnsProvider> = matches
             .iter()
             .filter(|(_, suffix)| suffix.len() == best_suffix_len)
             .map(|(provider, _)| provider.clone())
             .collect();
 
-        let (provider, matched_suffix) = matches
-            .first()
-            .map(|(provider, suffix)| (provider.clone(), suffix.clone()))
-            .unwrap();
+        let (provider, matched_suffix) = (first_match.0.clone(), first_match.1.clone());
 
         Ok(DnsProviderResolution {
             provider: Some(provider),

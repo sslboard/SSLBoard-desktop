@@ -4,8 +4,6 @@
 //! Apple's Security Framework. When biometric hardware is available, secrets
 //! are stored with Touch ID/Face ID protection.
 
-#![cfg(target_os = "macos")]
-
 use base64::{Engine as _, engine::general_purpose};
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::data::CFData;
@@ -53,16 +51,16 @@ impl BiometricKeyringStore {
         match self.get() {
             Ok(key) => {
                 debug!("[biometric] get_or_create: found existing biometric key");
-                return Ok(key);
+                Ok(key)
             }
             Err(SecretStoreError::NotFound(_)) => {
                 debug!("[biometric] get_or_create: no biometric key found, creating new");
                 // Key doesn't exist, create it with biometric protection
-                return self.create();
+                self.create()
             }
             Err(err) => {
                 warn!("[biometric] get_or_create: error getting key: {}", err);
-                return Err(err);
+                Err(err)
             }
         }
     }

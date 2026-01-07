@@ -224,7 +224,7 @@ fn validate_acme_requirements(
     tos_agreed: bool,
 ) -> Result<(), anyhow::Error> {
     if matches!(issuer_type, IssuerType::Acme) {
-        if contact_email.map_or(true, |email| email.trim().is_empty()) {
+        if contact_email.is_none_or(|email| email.trim().is_empty()) {
             return Err(anyhow::anyhow!("contact email is required for ACME issuers"));
         }
         if !tos_agreed {

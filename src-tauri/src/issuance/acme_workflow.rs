@@ -9,7 +9,7 @@ use anyhow::{Result, anyhow};
 
 use crate::{
     core::types::{KeyAlgorithm, KeyCurve},
-    issuance::dns::{DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter, PropagationState},
+    issuance::dns::{record_name, DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter, PropagationState},
     issuance::dns_providers::adapter_for_provider,
     secrets::manager::SecretManager,
     storage::dns::DnsConfigStore,
@@ -136,7 +136,7 @@ pub fn create_acme_order(
     domains: &[String],
 ) -> Result<NewOrder<EphemeralPersist>> {
     let primary = domains
-        .get(0)
+        .first()
         .cloned()
         .ok_or_else(|| anyhow!("primary domain missing"))?;
 
@@ -149,6 +149,7 @@ pub fn create_acme_order(
 
 /// Prepares DNS challenge records for the ACME order.
 /// Returns DNS record instructions, authorizations, and records to cleanup.
+#[allow(clippy::type_complexity)]
 pub fn prepare_dns_challenges(
     order: &NewOrder<EphemeralPersist>,
     dns_store: &DnsConfigStore,
@@ -181,14 +182,13 @@ pub fn prepare_dns_challenges(
 
         let mut record = adapter.present_txt(&request)?;
 
-        if let Some(provider) = resolution.provider.as_ref() {
-            if resolution.ambiguous.len() <= 1 {
-                let provider_adapter = adapter_for_provider(provider, secrets);
-                provider_adapter.create_txt(&record.record_name, &record.value)?;
-                record.adapter = provider.provider_type.clone();
-                // Store for cleanup after successful issuance
-                dns_records_to_cleanup.push((domain.clone(), record.record_name.clone()));
-            }
+        if let Some(provider) = resolution.provider.as_ref()
+            && resolution.ambiguous.len() <= 1 {
+            let provider_adapter = adapter_for_provider(provider, secrets);
+            provider_adapter.create_txt(&record.record_name, &record.value)?;
+            record.adapter = provider.provider_type.clone();
+            // Store for cleanup after successful issuance
+            dns_records_to_cleanup.push((domain.clone(), record.record_name.clone()));
         }
 
         dns_records.push(record);
@@ -246,7 +246,7 @@ pub fn check_dns_propagation(
         // Poll for DNS propagation with retries
         let timeout = Duration::from_secs(30);
         let interval = Duration::from_secs(2);
-        let record_name = ManualDnsAdapter::record_name(&domain);
+        let record_name = record_name(&domain);
 
         let propagation_result = super::dns_providers::poll_dns_propagation(&record_name, &proof, timeout, interval)?;
 

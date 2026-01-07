@@ -125,7 +125,7 @@ impl CloudflareAdapter {
         record_name: &str,
     ) -> Result<Vec<CloudflareDnsRecordResult>> {
         let response = client
-            .get(&format!(
+            .get(format!(
                 "https://api.cloudflare.com/client/v4/zones/{}/dns_records?type=TXT&name={}",
                 zone_id, record_name
             ))
@@ -170,7 +170,7 @@ impl CloudflareAdapter {
         };
 
         let response = client
-            .post(&format!(
+            .post(format!(
                 "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
                 zone_id
             ))
@@ -205,7 +205,7 @@ impl CloudflareAdapter {
 
         let record_id = result
             .result
-            .and_then(|r| Some(r.id))
+            .map(|r| r.id)
             .ok_or_else(|| anyhow!("Cloudflare API did not return record ID"))?;
 
         Ok(record_id)
@@ -218,7 +218,7 @@ impl CloudflareAdapter {
         let client = http::HttpClient::shared();
 
         let delete_response = client
-            .delete(&format!(
+            .delete(format!(
                 "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
                 zone_id, record_id
             ))
@@ -256,7 +256,7 @@ impl AtomicDnsOperations for CloudflareAdapter {
     fn list_records(&mut self, record_name: &str) -> Result<Vec<DnsRecord>> {
         let zone_id = self.discover_zone_id()?;
         let client = http::HttpClient::shared();
-        let existing_records = self.list_existing_txt_records(&client, &zone_id, record_name)?;
+        let existing_records = self.list_existing_txt_records(client, &zone_id, record_name)?;
 
         Ok(existing_records
             .into_iter()

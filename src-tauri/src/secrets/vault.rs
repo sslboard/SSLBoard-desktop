@@ -1,9 +1,9 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
-use zeroize::{Zeroize, Zeroizing};
 use log::debug;
+use zeroize::{Zeroize, Zeroizing};
 
-use super::{store::SecretStoreError, MasterKeyStoreTrait};
+use super::{MasterKeyStoreTrait, store::SecretStoreError};
 
 /// Caches the master key in memory and provides explicit lock/unlock control.
 pub struct MasterKeyVault {
@@ -45,10 +45,10 @@ impl MasterKeyVault {
     }
 
     pub fn lock(&self) {
-        if let Ok(mut guard) = self.cached.write() {
-            if let Some(mut key) = guard.take() {
-                key.zeroize();
-            }
+        if let Ok(mut guard) = self.cached.write()
+            && let Some(mut key) = guard.take()
+        {
+            key.zeroize();
         }
     }
 

@@ -6,8 +6,8 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, Context, Result};
-use rusqlite::{params, Connection, OpenFlags};
+use anyhow::{Context, Result, anyhow};
+use rusqlite::{Connection, OpenFlags, params};
 use tauri::{AppHandle, Manager};
 
 use super::migrations;
@@ -82,12 +82,16 @@ impl Db {
     }
 
     fn import_legacy_databases(data_dir: &Path, conn: &mut Connection) -> Result<()> {
-        Self::import_legacy_db(conn, &data_dir.join("issuance.sqlite"), &[
-            "issuer_configs",
-            "dns_providers",
-            "dns_zone_mappings",
-        ])?;
-        Self::import_legacy_db(conn, &data_dir.join("inventory.sqlite"), &["certificate_records"])?;
+        Self::import_legacy_db(
+            conn,
+            &data_dir.join("issuance.sqlite"),
+            &["issuer_configs", "dns_providers", "dns_zone_mappings"],
+        )?;
+        Self::import_legacy_db(
+            conn,
+            &data_dir.join("inventory.sqlite"),
+            &["certificate_records"],
+        )?;
         Self::import_legacy_db(conn, &data_dir.join("preferences.sqlite"), &["preferences"])?;
         Self::import_legacy_db(conn, &data_dir.join("secrets.sqlite"), &["secret_metadata"])?;
         Ok(())
@@ -98,9 +102,12 @@ impl Db {
             return Ok(());
         }
 
-        let legacy_str = legacy_path
-            .to_str()
-            .ok_or_else(|| anyhow!("legacy db path is not valid utf-8: {}", legacy_path.display()))?;
+        let legacy_str = legacy_path.to_str().ok_or_else(|| {
+            anyhow!(
+                "legacy db path is not valid utf-8: {}",
+                legacy_path.display()
+            )
+        })?;
 
         let schema = format!(
             "legacy_{}",
@@ -196,7 +203,7 @@ impl Db {
         }
         tx.commit()?;
 
-        conn.execute(&format!("DETACH DATABASE {schema}"), [])
+        conn.execute("DETACH DATABASE ?", params![schema])
             .context("failed to detach legacy db")?;
 
         Self::backup_legacy_db_file(legacy_path)?;
@@ -250,8 +257,13 @@ impl Db {
             return Ok(());
         }
         let backup = Self::next_backup_path(path);
-        fs::rename(path, &backup)
-            .with_context(|| format!("failed to rename {} to {}", path.display(), backup.display()))?;
+        fs::rename(path, &backup).with_context(|| {
+            format!(
+                "failed to rename {} to {}",
+                path.display(),
+                backup.display()
+            )
+        })?;
         Ok(())
     }
 
