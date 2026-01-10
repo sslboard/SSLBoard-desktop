@@ -1,4 +1,5 @@
 mod core;
+mod domain;
 mod distribution;
 pub mod issuance;
 mod secrets;

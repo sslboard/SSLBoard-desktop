@@ -76,7 +76,7 @@ export function DomainsInputCard({
           <Textarea
             id="domains-input"
             value={domainsInput}
-            onChange={(e) => onDomainsChange(e.target.value)}
+            onChange={(e) => onDomainsChange(e.target.value.normalize("NFC"))}
             rows={3}
             placeholder="test.ezs3.net, test1.ezs3.net"
           />

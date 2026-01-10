@@ -24,9 +24,10 @@ export function IssuePage() {
     selectIssuerById,
   } = useIssuerOptions();
 
-  const parsedDomains = domainsInput
+  const normalizedInput = domainsInput.normalize("NFC");
+  const parsedDomains = normalizedInput
     .split(/[\s,]+/)
-    .map((d) => d.trim().toLowerCase())
+    .map((d) => d.normalize("NFC").trim().toLowerCase())
     .filter(Boolean);
 
   const { providerPreview, providerLoading, providerError } =

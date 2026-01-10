@@ -9,6 +9,7 @@ use anyhow::{Result, anyhow};
 
 use crate::{
     core::types::{KeyAlgorithm, KeyCurve},
+    domain::normalize_domain_for_storage,
     issuance::dns::{record_name, DnsAdapter, DnsChallengeRequest, DnsRecordInstruction, ManualDnsAdapter, PropagationState},
     issuance::dns_providers::adapter_for_provider,
     secrets::manager::SecretManager,
@@ -24,11 +25,18 @@ pub fn validate_and_normalize_domains(domains: Vec<String>) -> Result<Vec<String
         return Err(anyhow!("At least one domain is required"));
     }
 
-    let mut normalized: Vec<String> = domains
-        .into_iter()
-        .map(|d| d.trim().trim_end_matches('.').to_lowercase())
-        .filter(|d| !d.is_empty())
-        .collect();
+    let mut normalized: Vec<String> = Vec::new();
+    for domain in domains {
+        let trimmed = domain.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let ascii = normalize_domain_for_storage(trimmed)
+            .map_err(|err| anyhow!("Invalid domain name \"{trimmed}\": {err}"))?;
+        if !ascii.is_empty() {
+            normalized.push(ascii);
+        }
+    }
 
     normalized.sort();
     normalized.dedup();

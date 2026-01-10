@@ -7,6 +7,7 @@ use rusqlite::{Connection, Row, params};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::domain::{normalize_domain_for_storage, normalize_domain_suffix_for_storage};
 use crate::storage::db::Db;
 
 #[derive(Clone, Debug)]
@@ -193,7 +194,7 @@ impl DnsConfigStore {
 
     pub fn resolve_provider_for_domain(&self, hostname: &str) -> Result<DnsProviderResolution> {
         let providers = self.list_providers()?;
-        let normalized = normalize_hostname(hostname);
+        let normalized = normalize_hostname(hostname)?;
         let mut matches: Vec<(DnsProvider, String)> = Vec::new();
 
         for provider in providers {
@@ -269,10 +270,16 @@ impl DnsConfigStore {
                 continue;
             }
 
-            let suffix = normalize_suffix(&pattern);
-            if suffix.is_empty() {
-                continue;
-            }
+            let suffix = match normalize_suffix(&pattern) {
+                Ok(value) => value,
+                Err(err) => {
+                    warn!(
+                        "[dns] invalid legacy suffix for adapter {}: {}",
+                        adapter_id, err
+                    );
+                    continue;
+                }
+            };
 
             let created_at = match DateTime::parse_from_rfc3339(&created_at_raw) {
                 Ok(dt) => dt.with_timezone(&Utc),
@@ -511,33 +518,53 @@ impl LegacyProvider {
     }
 }
 
-pub fn parse_domain_suffixes(raw: &str) -> Vec<String> {
-    let mut suffixes: Vec<String> = raw
-        .split(|ch: char| ch == ',' || ch.is_whitespace())
-        .map(normalize_suffix)
-        .filter(|suffix| !suffix.is_empty())
-        .collect();
+pub fn parse_domain_suffixes(raw: &str) -> Result<Vec<String>> {
+    let mut suffixes: Vec<String> = Vec::new();
+    for entry in raw.split(|ch: char| ch == ',' || ch.is_whitespace()) {
+        let normalized = normalize_suffix(entry)?;
+        if !normalized.is_empty() {
+            suffixes.push(normalized);
+        }
+    }
     suffixes.sort();
     suffixes.dedup();
-    suffixes
+    Ok(suffixes)
 }
 
-fn normalize_suffix(raw: &str) -> String {
-    raw.trim()
-        .trim_start_matches("*.")
-        .trim_start_matches('.')
-        .trim_end_matches('.')
-        .to_ascii_lowercase()
+fn normalize_suffix(raw: &str) -> Result<String> {
+    normalize_domain_suffix_for_storage(raw)
 }
 
-fn normalize_hostname(hostname: &str) -> String {
-    hostname.trim().trim_end_matches('.').to_ascii_lowercase()
+fn normalize_hostname(hostname: &str) -> Result<String> {
+    normalize_domain_for_storage(hostname)
 }
 
 fn matches_suffix(hostname: &str, suffix: &str) -> bool {
-    let suffix = normalize_suffix(suffix);
+    let suffix = match normalize_suffix(suffix) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
     if suffix.is_empty() {
         return false;
     }
     hostname == suffix || hostname.ends_with(&format!(".{suffix}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{matches_suffix, normalize_hostname};
+
+    #[test]
+    fn matches_idn_suffix_with_unicode_input() {
+        let hostname = normalize_hostname("testé.fr").expect("normalize hostname");
+        assert!(matches_suffix(&hostname, "testé.fr"));
+        assert!(matches_suffix(&hostname, "xn--test-epa.fr"));
+    }
+
+    #[test]
+    fn matches_idn_suffix_for_subdomain() {
+        let hostname = normalize_hostname("sub.testé.fr").expect("normalize hostname");
+        assert!(matches_suffix(&hostname, "testé.fr"));
+        assert!(matches_suffix(&hostname, "xn--test-epa.fr"));
+    }
 }

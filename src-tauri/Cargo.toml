@@ -71,6 +71,7 @@ aws-config = "1"
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
+idna = "1.1"
 
 # Logging
 log = "0.4"

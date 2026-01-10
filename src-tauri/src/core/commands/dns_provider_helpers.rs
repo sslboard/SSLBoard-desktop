@@ -10,7 +10,7 @@ pub(crate) fn validate_label(label: &str) -> Result<(), anyhow::Error> {
 }
 
 pub(crate) fn validate_domain_suffixes(raw: &str) -> Result<Vec<String>, anyhow::Error> {
-    let domain_suffixes = parse_domain_suffixes(raw);
+    let domain_suffixes = parse_domain_suffixes(raw)?;
     if domain_suffixes.is_empty() {
         return Err(anyhow!("at least one domain suffix is required"));
     }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::{secrets::manager::SecretManager, storage::dns::DnsProvider};
+use crate::{domain::normalize_domain_for_storage, secrets::manager::SecretManager, storage::dns::DnsProvider};
 
 mod base;
 mod cloudflare;
@@ -24,6 +24,14 @@ pub trait DnsProviderAdapter: Send + Sync {
 }
 
 pub(crate) fn matches_zone(domain_suffix: &str, zone_name: &str) -> bool {
+    let domain_suffix = match normalize_domain_for_storage(domain_suffix) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let zone_name = match normalize_domain_for_storage(zone_name) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
     zone_name == domain_suffix || domain_suffix.ends_with(&format!(".{}", zone_name))
 }
 
@@ -167,5 +175,13 @@ mod tests {
     fn matches_subdomain_suffix() {
         assert!(matches_zone("sub.example.com", "example.com"));
         assert!(!matches_zone("example.com", "sub.example.com"));
+    }
+
+    #[test]
+    fn matches_idn_suffix() {
+        assert!(matches_zone("testé.ezs3.net", "ezs3.net"));
+        assert!(matches_zone("xn--test-epa.ezs3.net", "ezs3.net"));
+        assert!(matches_zone("testé.fr", "xn--test-epa.fr"));
+        assert!(!matches_zone("example.com", "xn--test-epa.fr"));
     }
 }

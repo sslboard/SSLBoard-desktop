@@ -5,6 +5,7 @@ use crate::core::types::{
     DeleteDnsProviderRequest, DnsProviderDto, DnsProviderResolutionDto, DnsProviderType,
     ResolveDnsProviderRequest, UpdateDnsProviderRequest,
 };
+use crate::domain::normalize_domain_for_display;
 use crate::secrets::manager::{SecretError, SecretManager};
 use crate::storage::dns::{DnsConfigStore, DnsProvider};
 
@@ -164,7 +165,9 @@ pub async fn dns_resolve_provider(
         let resolution = store.resolve_provider_for_domain(&resolve_req.hostname)?;
         Ok(DnsProviderResolutionDto {
             provider: resolution.provider.map(provider_record_to_dto),
-            matched_suffix: resolution.matched_suffix,
+            matched_suffix: resolution
+                .matched_suffix
+                .map(|suffix| normalize_domain_for_display(&suffix)),
             ambiguous: resolution
                 .ambiguous
                 .into_iter()
@@ -196,7 +199,11 @@ pub(crate) fn provider_record_to_dto(record: DnsProvider) -> DnsProviderDto {
         id: record.id,
         provider_type,
         label: record.label,
-        domain_suffixes: record.domain_suffixes,
+        domain_suffixes: record
+            .domain_suffixes
+            .into_iter()
+            .map(|suffix| normalize_domain_for_display(&suffix))
+            .collect(),
         config,
         created_at: record.created_at,
         updated_at: record.updated_at,

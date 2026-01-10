@@ -1,6 +1,7 @@
 use tauri::{async_runtime::spawn_blocking, State};
 
 use crate::core::types::CertificateRecord;
+use crate::domain::normalize_domains_for_display;
 use crate::storage::inventory::InventoryStore;
 
 /// Retrieves all certificate records from the inventory.
@@ -13,7 +14,14 @@ pub async fn list_certificates(
     store: State<'_, InventoryStore>,
 ) -> Result<Vec<CertificateRecord>, String> {
     let store = store.inner().clone();
-    spawn_blocking(move || store.list_certificates())
+    spawn_blocking(move || {
+        store.list_certificates().map(|records| {
+            records
+                .into_iter()
+                .map(record_for_display)
+                .collect()
+        })
+    })
         .await
         .map_err(|err| format!("List join error: {err}"))?
         .map_err(|err| err.to_string())
@@ -39,5 +47,13 @@ pub async fn get_certificate(
         .await
         .map_err(|err| format!("Get join error: {err}"))?
         .map_err(|err| err.to_string())?
+        .map(record_for_display)
         .ok_or_else(|| format!("Certificate not found: {missing_id}"))
+}
+
+fn record_for_display(mut record: CertificateRecord) -> CertificateRecord {
+    record.subjects = normalize_domains_for_display(&record.subjects);
+    record.sans = normalize_domains_for_display(&record.sans);
+    record.domain_roots = normalize_domains_for_display(&record.domain_roots);
+    record
 }

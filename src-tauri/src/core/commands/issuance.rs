@@ -3,6 +3,7 @@ use tauri::{async_runtime::spawn_blocking, State};
 use crate::core::types::{
     CertificateRecord, CompleteIssuanceRequest, StartIssuanceRequest, StartIssuanceResponse,
 };
+use crate::domain::normalize_domains_for_display;
 use crate::issuance::flow::{complete_managed_dns01, start_managed_dns01};
 use crate::secrets::manager::SecretManager;
 use crate::storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore};
@@ -56,4 +57,12 @@ pub async fn complete_managed_issuance(
         .await
         .map_err(|err| format!("Complete issuance join error: {err}"))?
         .map_err(|err: anyhow::Error| err.to_string())
+        .map(record_for_display)
+}
+
+fn record_for_display(mut record: CertificateRecord) -> CertificateRecord {
+    record.subjects = normalize_domains_for_display(&record.subjects);
+    record.sans = normalize_domains_for_display(&record.sans);
+    record.domain_roots = normalize_domains_for_display(&record.domain_roots);
+    record
 }
