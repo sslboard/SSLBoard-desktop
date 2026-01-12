@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type CertificateSource = "External" | "Managed";
 export type KeyAlgorithm = "rsa" | "ecdsa";
 export type KeyCurve = "p256" | "p384";
+export type CsrSource = "imported" | "generated";
 
 export type CertificateRecord = {
   id: string;
@@ -21,6 +22,12 @@ export type CertificateRecord = {
   key_algorithm?: KeyAlgorithm | null;
   key_size?: number | null;
   key_curve?: KeyCurve | null;
+  csr_subject?: string | null;
+  csr_sans?: string[] | null;
+  csr_key_algorithm?: KeyAlgorithm | null;
+  csr_key_size?: number | null;
+  csr_key_curve?: KeyCurve | null;
+  csr_source?: CsrSource | null;
 };
 
 export type ExportBundle = "cert" | "chain" | "fullchain";

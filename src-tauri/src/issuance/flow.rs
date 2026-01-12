@@ -12,8 +12,10 @@ use uuid::Uuid;
 use x509_parser::parse_x509_certificate;
 
 use crate::{
-    core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve},
-    issuance::acme_workflow,
+    core::types::{
+        CertificateRecord, CertificateSource, CsrMetadata, CsrSource, KeyAlgorithm, KeyCurve,
+    },
+    issuance::{acme_workflow, csr as csr_tools},
     issuance::dns::DnsRecordInstruction,
     issuance::dns_providers::adapter_for_provider,
     secrets::{manager::SecretManager, types::SecretKind},
@@ -33,9 +35,14 @@ struct PendingIssuance {
 }
 
 static SESSIONS: OnceLock<Mutex<HashMap<String, PendingIssuance>>> = OnceLock::new();
+static CSR_SESSIONS: OnceLock<Mutex<HashMap<String, PendingCsrIssuance>>> = OnceLock::new();
 
 fn sessions() -> &'static Mutex<HashMap<String, PendingIssuance>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn csr_sessions() -> &'static Mutex<HashMap<String, PendingCsrIssuance>> {
+    CSR_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Starts a managed-key ACME DNS-01 issuance and returns DNS instructions plus a request id.
@@ -220,10 +227,12 @@ pub fn complete_managed_dns01(
     let record = build_record(
         &chain_pem,
         domains,
-        managed_key_ref.clone(),
-        key_algorithm,
+        Some(managed_key_ref.clone()),
+        Some(key_algorithm),
         key_size,
         key_curve,
+        None,
+        None,
     )?;
     inventory.insert_certificate(&record)?;
 
@@ -274,13 +283,242 @@ pub fn complete_managed_dns01(
     Ok(record)
 }
 
+struct PendingCsrIssuance {
+    order: Order,
+    identifiers: Vec<String>,
+    csr_der: Vec<u8>,
+    csr_metadata: CsrMetadata,
+    csr_source: CsrSource,
+    managed_key_ref: Option<String>,
+    dns_records_to_cleanup: Vec<(String, String)>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn start_csr_dns01(
+    issuer_id: String,
+    csr_path: String,
+    csr_source: CsrSource,
+    managed_key_ref: Option<String>,
+    issuer_store: &IssuerConfigStore,
+    dns_store: &DnsConfigStore,
+    secrets: &SecretManager,
+) -> Result<(String, Vec<DnsRecordInstruction>, CsrMetadata, Vec<String>, Vec<String>)> {
+    log::info!(
+        "[acme] starting CSR issuance issuer_id={} csr_path={}",
+        issuer_id,
+        csr_path
+    );
+
+    let parsed = csr_tools::load_and_validate_csr(&csr_path)?;
+
+    if let Some(ref key_ref) = managed_key_ref {
+        let metadata = secrets
+            .get_metadata(key_ref)
+            .map_err(|err| anyhow!(err.to_string()))?
+            .ok_or_else(|| anyhow!("Managed key reference not found: {}", key_ref))?;
+        if !matches!(metadata.kind, SecretKind::ManagedPrivateKey) {
+            return Err(anyhow!(
+                "CSR managed key reference {} is not a managed private key",
+                key_ref
+            ));
+        }
+    }
+
+    let issuer = issuer_store
+        .get(&issuer_id)?
+        .ok_or_else(|| anyhow!("Issuer not found: {}", issuer_id))?;
+    if !issuer.tos_agreed {
+        return Err(anyhow!(
+            "Issuer requires Terms of Service acceptance before issuance"
+        ));
+    }
+
+    let contact_email = issuer
+        .contact_email
+        .clone()
+        .ok_or_else(|| anyhow!("Issuer contact email is required"))?;
+    let account_key_ref = issuer
+        .account_key_ref
+        .clone()
+        .ok_or_else(|| anyhow!("Issuer account key ref is missing"))?;
+    let account_key_pem = secrets
+        .resolve_secret(&account_key_ref)
+        .map_err(|e| anyhow!(e.to_string()))?;
+    let account_key_pem = String::from_utf8(account_key_pem)
+        .map_err(|_| anyhow!("Stored ACME account key is not valid UTF-8"))?;
+
+    let account = tauri::async_runtime::block_on(acme_workflow::setup_acme_account(
+        &issuer.directory_url,
+        &contact_email,
+        &account_key_pem,
+    ))?;
+
+    let mut new_order = tauri::async_runtime::block_on(acme_workflow::create_acme_order(
+        &account,
+        &parsed.identifiers,
+    ))?;
+
+    let (dns_records, dns_records_to_cleanup) =
+        tauri::async_runtime::block_on(acme_workflow::prepare_dns_challenges(
+            &mut new_order,
+            dns_store,
+            secrets,
+        ))?;
+
+    let request_id = Uuid::new_v4().to_string();
+    let pending = PendingCsrIssuance {
+        order: new_order,
+        identifiers: parsed.identifiers.clone(),
+        csr_der: parsed.der,
+        csr_metadata: parsed.metadata.clone(),
+        csr_source,
+        managed_key_ref,
+        dns_records_to_cleanup,
+    };
+
+    csr_sessions()
+        .lock()
+        .map_err(|e| anyhow!(e.to_string()))?
+        .insert(request_id.clone(), pending);
+
+    Ok((
+        request_id,
+        dns_records,
+        parsed.metadata,
+        parsed.identifiers,
+        parsed.warnings,
+    ))
+}
+
+pub fn complete_csr_dns01(
+    request_id: &str,
+    inventory: &InventoryStore,
+    secrets: &SecretManager,
+    dns_store: &DnsConfigStore,
+) -> Result<CertificateRecord> {
+    log::info!("[acme] completing CSR issuance request_id={}", request_id);
+    let pending = csr_sessions()
+        .lock()
+        .map_err(|e| anyhow!(e.to_string()))?
+        .remove(request_id)
+        .ok_or_else(|| anyhow!("CSR issuance session not found or already finalized"))?;
+
+    let PendingCsrIssuance {
+        mut order,
+        identifiers,
+        csr_der,
+        csr_metadata,
+        csr_source,
+        managed_key_ref,
+        dns_records_to_cleanup,
+    } = pending;
+
+    let retry_policy = RetryPolicy::new().timeout(Duration::from_secs(60));
+    let chain_pem = tauri::async_runtime::block_on(async {
+        log::debug!("[acme] validating DNS-01 challenges for CSR issuance");
+        let mut authorizations = order.authorizations();
+        while let Some(result) = authorizations.next().await {
+            let mut authz = result?;
+            if matches!(authz.status, instant_acme::AuthorizationStatus::Valid) {
+                continue;
+            }
+            if !matches!(authz.status, instant_acme::AuthorizationStatus::Pending) {
+                return Err(anyhow!(
+                    "unexpected authorization status for {}",
+                    authz.identifier()
+                ));
+            }
+
+            let mut challenge = authz
+                .challenge(ChallengeType::Dns01)
+                .ok_or_else(|| anyhow!("no dns01 challenge found"))?;
+            let domain = authorized_dns_name(challenge.identifier())?;
+            let proof = challenge.key_authorization().dns_value();
+            log::debug!("[acme] checking propagation for {}", domain);
+            acme_workflow::check_dns_propagation(&domain, &proof)?;
+
+            challenge.set_ready().await?;
+        }
+
+        log::debug!("[acme] polling CSR order readiness");
+        let status = order.poll_ready(&retry_policy).await?;
+        if status != OrderStatus::Ready {
+            return Err(anyhow!("unexpected order status: {status:?}"));
+        }
+
+        log::debug!("[acme] finalizing CSR order");
+        order.finalize_csr(&csr_der).await?;
+        log::debug!("[acme] polling CSR certificate chain");
+        order.poll_certificate(&retry_policy).await.map_err(|e| e.into())
+    })?;
+
+    let record = build_record(
+        &chain_pem,
+        identifiers,
+        managed_key_ref.clone(),
+        Some(csr_metadata.key_algorithm.clone()),
+        csr_metadata.key_size,
+        csr_metadata.key_curve.clone(),
+        Some(csr_metadata),
+        Some(csr_source),
+    )?;
+    inventory.insert_certificate(&record)?;
+
+    if let Some(ref key_ref) = managed_key_ref {
+        if let Err(err) = secrets.resolve_secret(key_ref) {
+            log::warn!(
+                "[issuance] managed key ref {} failed to resolve after CSR issuance: {}",
+                key_ref,
+                err
+            );
+        }
+    }
+
+    for (domain, record_name) in dns_records_to_cleanup {
+        match dns_store.resolve_provider_for_domain(&domain) {
+            Ok(resolution) => {
+                if let Some(provider) = resolution.provider.as_ref()
+                    && resolution.ambiguous.len() <= 1
+                {
+                    let provider_adapter = adapter_for_provider(provider, secrets);
+                    if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
+                        log::warn!(
+                            "[dns] Failed to cleanup TXT record {} for domain {}: {}",
+                            record_name,
+                            domain,
+                            err
+                        );
+                    } else {
+                        log::debug!(
+                            "[dns] Successfully cleaned up TXT record {} for domain {}",
+                            record_name,
+                            domain
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                log::warn!(
+                    "[dns] Failed to resolve provider for cleanup {}: {}",
+                    domain,
+                    err
+                );
+            }
+        }
+    }
+
+    Ok(record)
+}
+
 fn build_record(
     chain_pem: &str,
     domains: Vec<String>,
-    managed_key_ref: String,
-    key_algorithm: KeyAlgorithm,
+    managed_key_ref: Option<String>,
+    key_algorithm: Option<KeyAlgorithm>,
     key_size: Option<u16>,
     key_curve: Option<KeyCurve>,
+    csr_metadata: Option<CsrMetadata>,
+    csr_source: Option<CsrSource>,
 ) -> Result<CertificateRecord> {
     let pem_blocks = pem::parse_many(chain_pem)
         .map_err(|err| anyhow!("failed to parse certificate chain: {err}"))?;
@@ -324,10 +562,16 @@ fn build_record(
         domain_roots: domains.iter().map(|d| root_from_hostname(d)).collect(),
         tags: vec![],
         chain_pem: Some(chain_pem.to_string()),
-        managed_key_ref: Some(managed_key_ref),
-        key_algorithm: Some(key_algorithm),
+        managed_key_ref,
+        key_algorithm,
         key_size,
         key_curve,
+        csr_subject: csr_metadata.as_ref().map(|meta| meta.subject.clone()),
+        csr_sans: csr_metadata.as_ref().map(|meta| meta.sans.clone()),
+        csr_key_algorithm: csr_metadata.as_ref().map(|meta| meta.key_algorithm.clone()),
+        csr_key_size: csr_metadata.as_ref().and_then(|meta| meta.key_size),
+        csr_key_curve: csr_metadata.as_ref().and_then(|meta| meta.key_curve.clone()),
+        csr_source,
     })
 }
 

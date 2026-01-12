@@ -17,7 +17,10 @@ pub use dns_providers::{
 };
 pub use export::export_certificate_pem;
 pub use inventory::{get_certificate, list_certificates};
-pub use issuance::{complete_managed_issuance, start_managed_issuance};
+pub use issuance::{
+    complete_csr_issuance, complete_managed_issuance, generate_csr, inspect_csr,
+    start_csr_issuance, start_managed_issuance,
+};
 pub use issuers::{create_issuer, delete_issuer, list_issuers, select_issuer, update_issuer};
 pub use preferences::{get_preference, set_preference};
 pub use secrets::{list_secret_refs, lock_vault};

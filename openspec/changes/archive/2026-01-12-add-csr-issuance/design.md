@@ -3,7 +3,7 @@ CSR import and CSR creation introduce new issuance paths and touch key handling.
 
 ## Goals / Non-Goals
 - Goals: support CSR import for issuance, support CSR generation with managed keys, and keep CSR validation and key material in the core.
-- Non-Goals: exporting private keys to the UI or building a general CSR editor for arbitrary extensions.
+- Non-Goals: exporting private keys to the UI, building a general CSR editor for arbitrary extensions, or changing existing managed issuance response shapes.
 
 ## Decisions
 - Decision: Parse and validate CSR PEM in the Rust core (signature, SANs, key algorithm) before issuance.
@@ -13,6 +13,7 @@ CSR import and CSR creation introduce new issuance paths and touch key handling.
 - Decision: Only RSA and ECDSA CSRs are supported, matching the managed key options.
 - Decision: Favor a dedicated CSR issuance command for clarity unless the existing issuance command remains readable with a new CSR option.
 - Decision: Use the Tauri dialog file path and have the Rust core read CSR bytes from disk to keep the UI untrusted and avoid moving file contents across IPC.
+- Decision: Convert CSR PEM input to DER for ACME finalization, and keep existing issuance response shapes unchanged.
 
 ## Risks / Trade-offs
 - CSR validation gaps could allow malformed requests; mitigate with strict parsing and explicit error surfaces.

@@ -63,7 +63,13 @@ fn create_tables(conn: &Connection) -> Result<()> {
             chain_pem TEXT,
             key_algorithm TEXT,
             key_size INTEGER,
-            key_curve TEXT
+            key_curve TEXT,
+            csr_subject TEXT,
+            csr_sans TEXT,
+            csr_key_algorithm TEXT,
+            csr_key_size INTEGER,
+            csr_key_curve TEXT,
+            csr_source TEXT
         );
 
         CREATE TABLE IF NOT EXISTS preferences (
@@ -95,6 +101,12 @@ fn migrate_tables(conn: &Connection) -> Result<()> {
         ("key_algorithm", "ALTER TABLE certificate_records ADD COLUMN key_algorithm TEXT"),
         ("key_size", "ALTER TABLE certificate_records ADD COLUMN key_size INTEGER"),
         ("key_curve", "ALTER TABLE certificate_records ADD COLUMN key_curve TEXT"),
+        ("csr_subject", "ALTER TABLE certificate_records ADD COLUMN csr_subject TEXT"),
+        ("csr_sans", "ALTER TABLE certificate_records ADD COLUMN csr_sans TEXT"),
+        ("csr_key_algorithm", "ALTER TABLE certificate_records ADD COLUMN csr_key_algorithm TEXT"),
+        ("csr_key_size", "ALTER TABLE certificate_records ADD COLUMN csr_key_size INTEGER"),
+        ("csr_key_curve", "ALTER TABLE certificate_records ADD COLUMN csr_key_curve TEXT"),
+        ("csr_source", "ALTER TABLE certificate_records ADD COLUMN csr_source TEXT"),
     ])?;
     ensure_columns(conn, "secret_metadata", &[(
         "ciphertext",

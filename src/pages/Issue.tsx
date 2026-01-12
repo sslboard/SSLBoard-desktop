@@ -1,21 +1,40 @@
 import { useState } from "react";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "../components/ui/button";
 import { PageHeader } from "../components/page-header";
 import { useIssuerOptions } from "../hooks/useIssuerOptions";
 import { useProviderPreview } from "../hooks/useProviderPreview";
 import { useManagedIssuanceFlow } from "../hooks/useManagedIssuanceFlow";
+import { useCsrIssuanceFlow } from "../hooks/useCsrIssuanceFlow";
 import { IssuerSelectionCard } from "../components/issue/IssuerSelectionCard";
 import { DomainsInputCard } from "../components/issue/DomainsInputCard";
+import { CsrIssuanceCard } from "../components/issue/CsrIssuanceCard";
+import { CsrGenerationCard } from "../components/issue/CsrGenerationCard";
+import { IssuanceModeCard, type IssuanceMode } from "../components/issue/IssuanceModeCard";
 import { DnsInstructionsPanel } from "../components/issue/DnsInstructionsPanel";
 import { IssuanceResultBanner } from "../components/issue/IssuanceResultBanner";
 import { CompletedCertificateCard } from "../components/issue/CompletedCertificateCard";
-import type { IssuanceKeyOption } from "../lib/issuance";
+import {
+  inspectCsr,
+  type GenerateCsrResponse,
+  type CsrSource,
+  type CsrValidationResult,
+  type IssuanceKeyOption,
+} from "../lib/issuance";
+import { normalizeError } from "../lib/errors";
 
 export function IssuePage() {
+  const [issuanceMode, setIssuanceMode] = useState<IssuanceMode>("dns");
   const [domainsInput, setDomainsInput] = useState("test.ezs3.net");
   const [keyOption, setKeyOption] = useState<IssuanceKeyOption>("rsa-2048");
+  const [csrPath, setCsrPath] = useState<string | null>(null);
+  const [csrResult, setCsrResult] = useState<CsrValidationResult | null>(null);
+  const [csrLoading, setCsrLoading] = useState(false);
+  const [csrError, setCsrError] = useState<string | null>(null);
+  const [csrSource, setCsrSource] = useState<CsrSource>("imported");
+  const [csrManagedKeyRef, setCsrManagedKeyRef] = useState<string | null>(null);
   const {
     issuers,
     issuerLoading,
@@ -51,6 +70,29 @@ export function IssuePage() {
     reset,
   } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, keyOption);
 
+  const {
+    startResult: csrStartResult,
+    loadingStart: csrLoadingStart,
+    finalizing: csrFinalizing,
+    error: csrFlowError,
+    certificate: csrCertificate,
+    manualRecords: csrManualRecords,
+    hasManual: csrHasManual,
+    hasManaged: csrHasManaged,
+    dnsModeLabel: csrDnsModeLabel,
+    awaitingManual: csrAwaitingManual,
+    finalizeFailed: csrFinalizeFailed,
+    handleStart: handleCsrStart,
+    continueIssuance: continueCsrIssuance,
+    retryFinalization: retryCsrFinalization,
+    reset: resetCsrFlow,
+  } = useCsrIssuanceFlow(
+    selectedIssuer?.issuer_id ?? null,
+    csrPath,
+    csrSource,
+    csrManagedKeyRef,
+  );
+
   const issuerLabel = selectedIssuer?.label ?? "No issuer selected";
   const issuerEnvironment = selectedIssuer?.environment ?? "staging";
   const issuerDescription =
@@ -70,6 +112,46 @@ export function IssuePage() {
     setDomainsInput("test.ezs3.net");
     setKeyOption("rsa-2048");
     reset();
+  }
+
+  async function handleSelectCsr() {
+    const selection = await open({
+      multiple: false,
+      filters: [{ name: "CSR", extensions: ["csr", "pem"] }],
+    });
+    if (typeof selection !== "string") {
+      return;
+    }
+    setCsrLoading(true);
+    setCsrError(null);
+    setCsrPath(selection);
+    setCsrSource("imported");
+    setCsrManagedKeyRef(null);
+    try {
+      const result = await inspectCsr({ csr_path: selection });
+      setCsrResult(result);
+    } catch (err) {
+      setCsrResult(null);
+      setCsrError(normalizeError(err));
+    } finally {
+      setCsrLoading(false);
+    }
+  }
+
+  function handleClearCsr() {
+    setCsrPath(null);
+    setCsrResult(null);
+    setCsrError(null);
+    setCsrManagedKeyRef(null);
+    setCsrSource("imported");
+    resetCsrFlow();
+  }
+
+  function handleGeneratedCsr(result: GenerateCsrResponse) {
+    setCsrPath(result.csr_path);
+    setCsrManagedKeyRef(result.managed_key_ref);
+    setCsrResult(result.result);
+    setCsrSource("generated");
   }
 
   return (
@@ -108,42 +190,91 @@ export function IssuePage() {
         onSelectIssuer={handleSelectIssuer}
       />
 
-      <DomainsInputCard
-        domainsInput={domainsInput}
-        parsedDomains={parsedDomains}
-        issuerLabel={issuerLabel}
-        issuerEnvironment={issuerEnvironment}
-        issuerReady={issuerReady}
-        loadingStart={loadingStart}
-        hasStartResult={Boolean(startResult)}
-        providerPreview={providerPreview}
-        providerLoading={providerLoading}
-        providerError={providerError}
-        keyOption={keyOption}
-        onDomainsChange={setDomainsInput}
-        onKeyOptionChange={setKeyOption}
-        onStart={handleStart}
-        onReset={handleReset}
-      />
+      <IssuanceModeCard mode={issuanceMode} onModeChange={setIssuanceMode} />
 
-      <IssuanceResultBanner error={error} successMessage={null} />
+      {issuanceMode === "dns" ? (
+        <>
+          <DomainsInputCard
+            domainsInput={domainsInput}
+            parsedDomains={parsedDomains}
+            issuerLabel={issuerLabel}
+            issuerEnvironment={issuerEnvironment}
+            issuerReady={issuerReady}
+            loadingStart={loadingStart}
+            hasStartResult={Boolean(startResult)}
+            providerPreview={providerPreview}
+            providerLoading={providerLoading}
+            providerError={providerError}
+            keyOption={keyOption}
+            onDomainsChange={setDomainsInput}
+            onKeyOptionChange={setKeyOption}
+            onStart={handleStart}
+            onReset={handleReset}
+          />
 
-      {startResult && (
-        <DnsInstructionsPanel
-          hasManual={hasManual}
-          hasManaged={hasManaged}
-          dnsModeLabel={dnsModeLabel}
-          manualRecords={manualRecords}
-          finalizing={finalizing}
-          awaitingManual={awaitingManual}
-          finalizeFailed={finalizeFailed}
-          hasCertificate={Boolean(certificate)}
-          onContinue={continueIssuance}
-          onRetryFinalize={retryFinalization}
-        />
-      )}
+          <IssuanceResultBanner error={error} successMessage={null} />
 
-      {certificate && <CompletedCertificateCard certificate={certificate} />}
+          {startResult && (
+            <DnsInstructionsPanel
+              hasManual={hasManual}
+              hasManaged={hasManaged}
+              dnsModeLabel={dnsModeLabel}
+              manualRecords={manualRecords}
+              finalizing={finalizing}
+              awaitingManual={awaitingManual}
+              finalizeFailed={finalizeFailed}
+              hasCertificate={Boolean(certificate)}
+              onContinue={continueIssuance}
+              onRetryFinalize={retryFinalization}
+            />
+          )}
+
+          {certificate && <CompletedCertificateCard certificate={certificate} />}
+        </>
+      ) : null}
+
+      {issuanceMode === "csr-import" ? (
+        <>
+          <CsrIssuanceCard
+            issuerLabel={issuerLabel}
+            issuerEnvironment={issuerEnvironment}
+            issuerReady={issuerReady}
+            loadingStart={csrLoadingStart}
+            hasStartResult={Boolean(csrStartResult)}
+            csrPath={csrPath}
+            csrResult={csrResult}
+            csrLoading={csrLoading}
+            csrError={csrError}
+            onSelectCsr={handleSelectCsr}
+            onClearCsr={handleClearCsr}
+            onStart={handleCsrStart}
+            onReset={resetCsrFlow}
+          />
+
+          <IssuanceResultBanner error={csrFlowError} successMessage={null} />
+
+          {csrStartResult && (
+            <DnsInstructionsPanel
+              hasManual={csrHasManual}
+              hasManaged={csrHasManaged}
+              dnsModeLabel={csrDnsModeLabel}
+              manualRecords={csrManualRecords}
+              finalizing={csrFinalizing}
+              awaitingManual={csrAwaitingManual}
+              finalizeFailed={csrFinalizeFailed}
+              hasCertificate={Boolean(csrCertificate)}
+              onContinue={continueCsrIssuance}
+              onRetryFinalize={retryCsrFinalization}
+            />
+          )}
+
+          {csrCertificate && <CompletedCertificateCard certificate={csrCertificate} />}
+        </>
+      ) : null}
+
+      {issuanceMode === "csr-generate" ? (
+        <CsrGenerationCard onGenerated={handleGeneratedCsr} />
+      ) : null}
     </div>
   );
 }

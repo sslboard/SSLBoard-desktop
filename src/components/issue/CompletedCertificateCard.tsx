@@ -27,6 +27,11 @@ function formatKeyInfo(record: CertificateRecord): string {
   return "ECDSA";
 }
 
+function formatCsrSource(source?: CertificateRecord["csr_source"]): string {
+  if (!source) return "Unknown";
+  return source === "generated" ? "Generated" : "Imported";
+}
+
 export function CompletedCertificateCard({
   certificate,
 }: CompletedCertificateCardProps) {
@@ -104,6 +109,41 @@ export function CompletedCertificateCard({
         <DetailItem label="Expiry" value={formatCertificateDate(certificate.not_after)} />
         <DetailItem label="Key type" value={formatKeyInfo(certificate)} />
       </div>
+
+      {certificate.csr_source ? (
+        <div className="mt-4 space-y-2 rounded-lg border bg-muted/40 p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            CSR metadata
+          </div>
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
+            <DetailItem label="CSR source" value={formatCsrSource(certificate.csr_source)} />
+            <DetailItem
+              label="CSR key"
+              value={
+                certificate.csr_key_algorithm
+                  ? formatKeyInfo({
+                      ...certificate,
+                      key_algorithm: certificate.csr_key_algorithm,
+                      key_size: certificate.csr_key_size,
+                      key_curve: certificate.csr_key_curve,
+                    })
+                  : "Unknown"
+              }
+            />
+          </div>
+          <DetailItem
+            label="CSR subject"
+            value={certificate.csr_subject ?? "Unknown"}
+          />
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            {certificate.csr_sans?.length
+              ? certificate.csr_sans.map((name) => (
+                  <SubjectPill key={name} text={name} />
+                ))
+              : "No CSR SANs"}
+          </div>
+        </div>
+      ) : null}
 
       {copied && (
         <div className="mt-3 text-xs font-semibold text-emerald-600">

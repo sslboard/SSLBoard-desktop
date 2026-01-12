@@ -55,5 +55,8 @@ fn record_for_display(mut record: CertificateRecord) -> CertificateRecord {
     record.subjects = normalize_domains_for_display(&record.subjects);
     record.sans = normalize_domains_for_display(&record.sans);
     record.domain_roots = normalize_domains_for_display(&record.domain_roots);
+    if let Some(csr_sans) = record.csr_sans.as_ref() {
+        record.csr_sans = Some(normalize_domains_for_display(csr_sans));
+    }
     record
 }

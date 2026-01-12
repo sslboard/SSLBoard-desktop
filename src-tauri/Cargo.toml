@@ -35,7 +35,7 @@ rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] 
 
 # PKI / Certificate operations
 rcgen = { version = "0.14", features = ["aws_lc_rs"] }  # Certificate and CSR generation
-x509-parser = "0.18"  # X.509 certificate parsing
+x509-parser = { version = "0.18", features = ["verify"] }  # X.509 certificate parsing
 pem = "3.0"  # PEM encoding/decoding
 pkcs12 = "0.2.0-pre.0"  # PFX/PKCS#12 export for Windows
 

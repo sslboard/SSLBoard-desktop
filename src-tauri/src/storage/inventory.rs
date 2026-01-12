@@ -10,7 +10,7 @@ use anyhow::{Context, Result, anyhow};
 use chrono::{Duration, Utc};
 use rusqlite::{Connection, Row, params};
 
-use crate::core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve};
+use crate::core::types::{CertificateRecord, CertificateSource, CsrSource, KeyAlgorithm, KeyCurve};
 use crate::storage::db::Db;
 
 /// SQLite-based storage for certificate inventory data.
@@ -44,7 +44,7 @@ impl InventoryStore {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            , key_algorithm, key_size, key_curve FROM certificate_records
+            , key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source FROM certificate_records
             ORDER BY not_after DESC
             "#,
         )?;
@@ -75,7 +75,7 @@ impl InventoryStore {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            , key_algorithm, key_size, key_curve FROM certificate_records
+            , key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source FROM certificate_records
             WHERE id = ?1
             "#,
         )?;
@@ -151,6 +151,12 @@ impl InventoryStore {
             key_algorithm: None,
             key_size: None,
             key_curve: None,
+            csr_subject: None,
+            csr_sans: None,
+            csr_key_algorithm: None,
+            csr_key_size: None,
+            csr_key_curve: None,
+            csr_source: None,
         };
 
         Self::insert_with_conn(&mut conn, &sample)
@@ -174,8 +180,8 @@ impl InventoryStore {
         conn.execute(
             r#"
             INSERT OR REPLACE INTO certificate_records (
-                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem, key_algorithm, key_size, key_curve
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem, key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
             "#,
             params![
                 record.id,
@@ -197,6 +203,16 @@ impl InventoryStore {
                 key_algorithm_to_db(&record.key_algorithm),
                 record.key_size,
                 key_curve_to_db(&record.key_curve),
+                record.csr_subject,
+                record
+                    .csr_sans
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
+                key_algorithm_to_db(&record.csr_key_algorithm),
+                record.csr_key_size,
+                key_curve_to_db(&record.csr_key_curve),
+                csr_source_to_db(&record.csr_source),
             ],
         )?;
         Ok(())
@@ -233,6 +249,12 @@ impl InventoryStore {
         let key_algorithm_raw: Option<String> = row.get(13)?;
         let key_size: Option<u16> = row.get(14)?;
         let key_curve_raw: Option<String> = row.get(15)?;
+        let csr_subject: Option<String> = row.get(16)?;
+        let csr_sans_raw: Option<String> = row.get(17)?;
+        let csr_key_algorithm_raw: Option<String> = row.get(18)?;
+        let csr_key_size: Option<u16> = row.get(19)?;
+        let csr_key_curve_raw: Option<String> = row.get(20)?;
+        let csr_source_raw: Option<String> = row.get(21)?;
 
         let source = match source_raw.as_str() {
             "External" => CertificateSource::External,
@@ -266,6 +288,14 @@ impl InventoryStore {
             key_algorithm: parse_key_algorithm(key_algorithm_raw)?,
             key_size,
             key_curve: parse_key_curve(key_curve_raw)?,
+            csr_subject,
+            csr_sans: csr_sans_raw
+                .map(|raw| serde_json::from_str(&raw).context("failed to deserialize csr_sans"))
+                .transpose()?,
+            csr_key_algorithm: parse_key_algorithm(csr_key_algorithm_raw)?,
+            csr_key_size,
+            csr_key_curve: parse_key_curve(csr_key_curve_raw)?,
+            csr_source: parse_csr_source(csr_source_raw)?,
         })
     }
 
@@ -316,6 +346,24 @@ fn parse_key_curve(raw: Option<String>) -> Result<Option<KeyCurve>> {
             "p256" => Ok(Some(KeyCurve::P256)),
             "p384" => Ok(Some(KeyCurve::P384)),
             _ => Err(anyhow!("Unknown key curve: {}", value)),
+        },
+    }
+}
+
+fn csr_source_to_db(value: &Option<CsrSource>) -> Option<String> {
+    value.as_ref().map(|source| match source {
+        CsrSource::Imported => "imported".to_string(),
+        CsrSource::Generated => "generated".to_string(),
+    })
+}
+
+fn parse_csr_source(raw: Option<String>) -> Result<Option<CsrSource>> {
+    match raw {
+        None => Ok(None),
+        Some(value) => match value.as_str() {
+            "imported" => Ok(Some(CsrSource::Imported)),
+            "generated" => Ok(Some(CsrSource::Generated)),
+            _ => Err(anyhow!("Unknown CSR source: {}", value)),
         },
     }
 }

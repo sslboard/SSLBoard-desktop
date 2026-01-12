@@ -8,6 +8,7 @@ Some users already have endpoint-owned keys and CSRs, and the current flow requi
 - Add CSR creation that generates a key in the Rust core and writes a CSR file for later issuance.
 - Validate CSRs in the Rust core (signature, SANs, key type) before starting issuance.
 - Store CSR metadata on issued certificates (subject, SANs, key type, source).
+- Preserve existing managed issuance response shapes and behavior while adding CSR paths.
 
 ## Impact
 - Affected specs: certificate-issuance

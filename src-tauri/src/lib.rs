@@ -6,10 +6,11 @@ mod secrets;
 mod storage;
 
 use core::commands::{
-    complete_managed_issuance, create_issuer, delete_issuer, dns_provider_create,
-    dns_provider_delete, dns_provider_list, dns_provider_test, dns_provider_update,
-    dns_resolve_provider, export_certificate_pem, get_certificate, get_preference,
-    list_certificates, list_issuers, list_secret_refs, lock_vault, select_issuer, set_preference,
+    complete_csr_issuance, complete_managed_issuance, create_issuer, delete_issuer,
+    dns_provider_create, dns_provider_delete, dns_provider_list, dns_provider_test,
+    dns_provider_update, dns_resolve_provider, export_certificate_pem, generate_csr,
+    get_certificate, get_preference, inspect_csr, list_certificates, list_issuers,
+    list_secret_refs, lock_vault, select_issuer, set_preference, start_csr_issuance,
     start_managed_issuance, update_issuer,
 };
 use secrets::manager::SecretManager;
@@ -71,6 +72,10 @@ pub fn run() {
             dns_resolve_provider,
             start_managed_issuance,
             complete_managed_issuance,
+            inspect_csr,
+            generate_csr,
+            start_csr_issuance,
+            complete_csr_issuance,
             get_preference,
             set_preference
         ])

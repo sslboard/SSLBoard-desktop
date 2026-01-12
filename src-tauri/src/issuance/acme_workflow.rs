@@ -189,6 +189,51 @@ pub fn build_csr_der(private_key_pem: &str, sans: &[String]) -> Result<Vec<u8>> 
     Ok(csr.der().to_vec())
 }
 
+/// Builds a CSR DER for the provided key, subject, and SANs.
+pub fn build_csr_der_with_subject(
+    private_key_pem: &str,
+    subject: &str,
+    sans: &[String],
+) -> Result<Vec<u8>> {
+    let key_pair = KeyPair::from_pem(private_key_pem)
+        .map_err(|err| anyhow!("failed to parse private key PEM: {err}"))?;
+    let subject_normalized = normalize_domain_for_storage(subject)
+        .map_err(|err| anyhow!("Invalid CSR subject \"{subject}\": {err}"))?;
+
+    let mut params = CertificateParams::new(Vec::<String>::new())
+        .map_err(|err| anyhow!("failed to create CSR parameters: {err}"))?;
+    params
+        .distinguished_name
+        .push(DnType::CommonName, subject_normalized.clone());
+
+    let mut san_names = Vec::new();
+    for name in sans {
+        let normalized = normalize_domain_for_storage(name)
+            .map_err(|err| anyhow!("Invalid SAN entry \"{name}\": {err}"))?;
+        if !normalized.is_empty() {
+            san_names.push(normalized);
+        }
+    }
+    san_names.sort();
+    san_names.dedup();
+
+    if !san_names.is_empty() {
+        let mut san_vec = Vec::new();
+        for name in &san_names {
+            san_vec.push(rcgen::SanType::DnsName(
+                rcgen::string::Ia5String::try_from(name.as_str())
+                    .map_err(|err| anyhow!("Invalid DNS name for SAN \"{name}\": {err}"))?,
+            ));
+        }
+        params.subject_alt_names = san_vec;
+    }
+
+    let csr = params
+        .serialize_request(&key_pair)
+        .map_err(|err| anyhow!("failed to generate CSR: {err}"))?;
+    Ok(csr.der().to_vec())
+}
+
 /// Creates an ACME account based on the issuer and account key.
 pub async fn setup_acme_account(
     issuer_directory_url: &str,

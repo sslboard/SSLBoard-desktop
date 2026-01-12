@@ -29,6 +29,13 @@ pub enum KeyCurve {
     P384,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CsrSource {
+    Imported,
+    Generated,
+}
+
 /// Represents a complete certificate record with all metadata and validation information.
 /// This structure is used for storing, retrieving, and displaying SSL/TLS certificate data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +72,34 @@ pub struct CertificateRecord {
     pub key_size: Option<u16>,
     /// ECDSA curve when applicable
     pub key_curve: Option<KeyCurve>,
+    /// CSR subject string when issuance used a CSR
+    pub csr_subject: Option<String>,
+    /// CSR SANs when issuance used a CSR
+    pub csr_sans: Option<Vec<String>>,
+    /// CSR key algorithm metadata when issuance used a CSR
+    pub csr_key_algorithm: Option<KeyAlgorithm>,
+    /// CSR RSA key size when applicable
+    pub csr_key_size: Option<u16>,
+    /// CSR ECDSA curve when applicable
+    pub csr_key_curve: Option<KeyCurve>,
+    /// CSR source when issuance used a CSR
+    pub csr_source: Option<CsrSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CsrMetadata {
+    pub subject: String,
+    pub sans: Vec<String>,
+    pub key_algorithm: KeyAlgorithm,
+    pub key_size: Option<u16>,
+    pub key_curve: Option<KeyCurve>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CsrValidationResult {
+    pub metadata: CsrMetadata,
+    pub identifiers: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,5 +327,47 @@ pub struct StartIssuanceResponse {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CompleteIssuanceRequest {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct InspectCsrRequest {
+    pub csr_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateCsrRequest {
+    pub subject: String,
+    pub sans: Vec<String>,
+    pub key_algorithm: Option<KeyAlgorithm>,
+    pub key_size: Option<u16>,
+    pub key_curve: Option<KeyCurve>,
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateCsrResponse {
+    pub csr_path: String,
+    pub managed_key_ref: String,
+    pub result: CsrValidationResult,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StartCsrIssuanceRequest {
+    pub issuer_id: String,
+    pub csr_path: String,
+    pub csr_source: CsrSource,
+    pub managed_key_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StartCsrIssuanceResponse {
+    pub request_id: String,
+    pub dns_records: Vec<DnsRecordInstruction>,
+    pub csr_result: CsrValidationResult,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompleteCsrIssuanceRequest {
     pub request_id: String,
 }
