@@ -22,7 +22,7 @@
   - Validates `issuer_id` is present and issuer exists
   - Checks for required keys (managed_key_ref or issuer account_key_ref)
   - Loads issuer configuration and account key
-  - Constructs ACME revocation request using acme-lib
+  - Constructs ACME revocation request using instant-acme
   - Submits revocation to CA
   - Updates certificate record with revocation metadata on success
 - [ ] 3.4 Handle revocation errors gracefully (network, CA rejection, etc.)
@@ -30,7 +30,7 @@
 
 ## 4. Backend: ACME Revocation Implementation
 
-- [ ] 4.1 Research acme-lib revocation API (check Certificate type methods)
+- [ ] 4.1 Research instant-acme revocation API (check revocation request options)
 - [ ] 4.2 Implement revocation using certificate private key method
 - [ ] 4.3 Implement revocation using account key method (fallback)
 - [ ] 4.4 Add revocation endpoint URL construction from issuer directory URL

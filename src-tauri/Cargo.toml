@@ -27,18 +27,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # ACME client for Let's Encrypt / public certificate issuance
-acme-lib = "0.9"  # Latest stable: 0.9.1
+instant-acme = { git = "https://github.com/djc/instant-acme", branch = "main" }
 sha2 = "0.10"
 hex = "0.4"
-
-# OpenSSL - use vendored feature to statically link (required for code signing on macOS)
-openssl = { version = "0.10", features = ["vendored"] }
+rustls-pki-types = "1"
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
 
 # PKI / Certificate operations
-rcgen = "0.13"  # Certificate and CSR generation
+rcgen = { version = "0.14", features = ["aws_lc_rs"] }  # Certificate and CSR generation
 x509-parser = "0.18"  # X.509 certificate parsing
 pem = "3.0"  # PEM encoding/decoding
-pkcs12 = "0.1"  # PFX/PKCS#12 export for Windows
+pkcs12 = "0.2.0-pre.0"  # PFX/PKCS#12 export for Windows
 
 # Secret storage (OS keychain adapters)
 keyring = "2.3"  # Cross-platform: macOS Keychain, Windows Credential Vault, Linux Secret Service
@@ -56,9 +55,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }  # SQLite for certificat
 
 # Async runtime (Tauri uses tokio, but we may need additional features)
 tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
 
 # HTTP client for DNS provider APIs
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 ureq = "2.10"
 
 # AWS SDK for Route 53

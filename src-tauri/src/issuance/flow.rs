@@ -4,64 +4,24 @@ use std::{
     time::Duration,
 };
 
-use acme_lib::{
-    Certificate, Error as AcmeError,
-    order::NewOrder,
-    persist::{Persist, PersistKey, PersistKind},
-};
 use anyhow::{Result, anyhow};
 use chrono::{TimeZone, Utc};
+use instant_acme::{ChallengeType, Identifier, Order, OrderStatus, RetryPolicy};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use x509_parser::pem::parse_x509_pem;
+use x509_parser::parse_x509_certificate;
 
 use crate::{
     core::types::{CertificateRecord, CertificateSource, KeyAlgorithm, KeyCurve},
     issuance::acme_workflow,
-    issuance::dns::{record_name, DnsRecordInstruction, PropagationState},
-    issuance::dns_providers::{adapter_for_provider, poll_dns_propagation},
+    issuance::dns::DnsRecordInstruction,
+    issuance::dns_providers::adapter_for_provider,
     secrets::{manager::SecretManager, types::SecretKind},
     storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
 };
 
-/// In-memory persistence for acme-lib that avoids disk I/O and lets us seed the ACME account key.
-#[derive(Clone, Default)]
-pub struct EphemeralPersist {
-    inner: std::sync::Arc<Mutex<HashMap<String, Vec<u8>>>>,
-}
-
-impl EphemeralPersist {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn seed_account_key(&self, realm: &str, pem: &[u8]) -> Result<()> {
-        let key = PersistKey::new(realm, PersistKind::AccountPrivateKey, "acme_account");
-        self.put(&key, pem).map_err(|e| anyhow!(e.to_string()))
-    }
-}
-
-impl Persist for EphemeralPersist {
-    fn put(&self, key: &PersistKey, value: &[u8]) -> acme_lib::Result<()> {
-        let mut lock = self
-            .inner
-            .lock()
-            .map_err(|e| AcmeError::Other(e.to_string()))?;
-        lock.insert(key.to_string(), value.to_vec());
-        Ok(())
-    }
-
-    fn get(&self, key: &PersistKey) -> acme_lib::Result<Option<Vec<u8>>> {
-        let lock = self
-            .inner
-            .lock()
-            .map_err(|e| AcmeError::Other(e.to_string()))?;
-        Ok(lock.get(&key.to_string()).cloned())
-    }
-}
-
 struct PendingIssuance {
-    order: NewOrder<EphemeralPersist>,
+    order: Order,
     domains: Vec<String>,
     managed_key_ref: String,
     managed_key_pem: String,
@@ -90,6 +50,11 @@ pub fn start_managed_dns01(
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
 ) -> Result<(String, Vec<DnsRecordInstruction>)> {
+    log::info!(
+        "[acme] starting managed issuance issuer_id={} domains={:?}",
+        issuer_id,
+        domains
+    );
     let normalized = acme_workflow::validate_and_normalize_domains(domains)?;
 
     let issuer = issuer_store
@@ -117,14 +82,34 @@ pub fn start_managed_dns01(
 
     let (key_algorithm, key_size, key_curve) =
         acme_workflow::resolve_key_params(key_algorithm, key_size, key_curve)?;
+    log::debug!(
+        "[acme] resolved key params algorithm={:?} size={:?} curve={:?}",
+        key_algorithm,
+        key_size,
+        key_curve
+    );
 
-    let (_directory, account) =
-        acme_workflow::setup_acme_account(&issuer.directory_url, &contact_email, &account_key_pem)?;
+    let account = tauri::async_runtime::block_on(acme_workflow::setup_acme_account(
+        &issuer.directory_url,
+        &contact_email,
+        &account_key_pem,
+    ))?;
 
-    let new_order = acme_workflow::create_acme_order(&account, &normalized)?;
+    let mut new_order = tauri::async_runtime::block_on(acme_workflow::create_acme_order(
+        &account,
+        &normalized,
+    ))?;
 
-    let (dns_records, _auths, dns_records_to_cleanup) =
-        acme_workflow::prepare_dns_challenges(&new_order, dns_store, secrets)?;
+    let (dns_records, dns_records_to_cleanup) =
+        tauri::async_runtime::block_on(acme_workflow::prepare_dns_challenges(
+            &mut new_order,
+            dns_store,
+            secrets,
+        ))?;
+    log::info!(
+        "[acme] prepared {} DNS-01 record(s) for issuance",
+        dns_records.len()
+    );
 
     let primary = normalized
         .first()
@@ -172,6 +157,7 @@ pub fn complete_managed_dns01(
     secrets: &SecretManager,
     dns_store: &DnsConfigStore,
 ) -> Result<CertificateRecord> {
+    log::info!("[acme] completing issuance request_id={}", request_id);
     let pending = sessions()
         .lock()
         .map_err(|e| anyhow!(e.to_string()))?
@@ -189,81 +175,50 @@ pub fn complete_managed_dns01(
         dns_records_to_cleanup,
     } = pending;
 
-    let auths = order.authorizations().map_err(|e| anyhow!(e.to_string()))?;
-    for auth in &auths {
-        let dns = auth.dns_challenge();
-        let proof = dns.dns_proof();
-        let domain = auth.domain_name().to_string();
+    let csr_der = acme_workflow::build_csr_der(&managed_key_pem, &domains)?;
+    let retry_policy = RetryPolicy::new().timeout(Duration::from_secs(60));
 
-        // Poll for DNS propagation with retries using unified retry logic
-        let timeout = Duration::from_secs(30);
-        let interval = Duration::from_secs(2);
-        let record_name = record_name(&domain);
+    let chain_pem = tauri::async_runtime::block_on(async {
+        log::debug!("[acme] validating DNS-01 challenges");
+        let mut authorizations = order.authorizations();
+        while let Some(result) = authorizations.next().await {
+            let mut authz = result?;
+            if matches!(authz.status, instant_acme::AuthorizationStatus::Valid) {
+                continue;
+            }
+            if !matches!(authz.status, instant_acme::AuthorizationStatus::Pending) {
+                return Err(anyhow!(
+                    "unexpected authorization status for {}",
+                    authz.identifier()
+                ));
+            }
 
-        let propagation_result = poll_dns_propagation(&record_name, &proof, timeout, interval)?;
+            let mut challenge = authz
+                .challenge(ChallengeType::Dns01)
+                .ok_or_else(|| anyhow!("no dns01 challenge found"))?;
+            let domain = authorized_dns_name(challenge.identifier())?;
+            let proof = challenge.key_authorization().dns_value();
+            log::debug!("[acme] checking propagation for {}", domain);
+            acme_workflow::check_dns_propagation(&domain, &proof)?;
 
-        // Check final state after polling
-        match propagation_result.state {
-            PropagationState::Found => {
-                // Already handled in loop, continue to next domain
-            }
-            PropagationState::NxDomain => {
-                return Err(anyhow!(
-                    "No TXT record found at {} after {}s. Please ensure the DNS record is created and propagated.",
-                    record_name,
-                    timeout.as_secs()
-                ));
-            }
-            PropagationState::Pending => {
-                return Err(anyhow!(
-                    "TXT record not found at {} after {}s. Please wait for DNS propagation and try again.",
-                    record_name,
-                    timeout.as_secs()
-                ));
-            }
-            PropagationState::WrongContent => {
-                // Should have been caught in loop, but handle just in case
-                return Err(anyhow!(
-                    "TXT record at {} has wrong value. Expected: {}. Observed: {:?}",
-                    record_name,
-                    proof,
-                    propagation_result.observed_values
-                ));
-            }
-            PropagationState::Error => {
-                return Err(anyhow!(
-                    "Failed to check DNS propagation for {}: {}",
-                    record_name,
-                    propagation_result
-                        .reason
-                        .unwrap_or_else(|| "Unknown error".to_string())
-                ));
-            }
+            challenge.set_ready().await?;
         }
-    }
 
-    // All DNS records are present, proceed with ACME validation
-    for auth in auths {
-        let dns = auth.dns_challenge();
-        dns.validate(2000).map_err(|e| anyhow!(e.to_string()))?;
-    }
-
-    let csr_order = loop {
-        if let Some(csr) = order.confirm_validations() {
-            break csr;
+        log::debug!("[acme] polling order readiness");
+        let status = order.poll_ready(&retry_policy).await?;
+        if status != OrderStatus::Ready {
+            return Err(anyhow!("unexpected order status: {status:?}"));
         }
-        order.refresh().map_err(|e| anyhow!(e.to_string()))?;
-    };
 
-    let cert_order = csr_order
-        .finalize(&managed_key_pem, 5000)
-        .map_err(|e| anyhow!(e.to_string()))?;
-    let certificate = cert_order
-        .download_and_save_cert()
-        .map_err(|e| anyhow!(e.to_string()))?;
+        log::debug!("[acme] finalizing order with CSR");
+        order.finalize_csr(&csr_der).await?;
+        log::debug!("[acme] polling for certificate chain");
+        order.poll_certificate(&retry_policy).await.map_err(|e| e.into())
+    })?;
+    log::info!("[acme] certificate chain received");
 
     let record = build_record(
-        &certificate,
+        &chain_pem,
         domains,
         managed_key_ref.clone(),
         key_algorithm,
@@ -286,7 +241,8 @@ pub fn complete_managed_dns01(
         match dns_store.resolve_provider_for_domain(&domain) {
             Ok(resolution) => {
                 if let Some(provider) = resolution.provider.as_ref()
-                    && resolution.ambiguous.len() <= 1 {
+                    && resolution.ambiguous.len() <= 1
+                {
                     let provider_adapter = adapter_for_provider(provider, secrets);
                     if let Err(err) = provider_adapter.cleanup_txt(&record_name) {
                         // Log but don't fail issuance if cleanup fails
@@ -319,17 +275,20 @@ pub fn complete_managed_dns01(
 }
 
 fn build_record(
-    certificate: &Certificate,
+    chain_pem: &str,
     domains: Vec<String>,
     managed_key_ref: String,
     key_algorithm: KeyAlgorithm,
     key_size: Option<u16>,
     key_curve: Option<KeyCurve>,
 ) -> Result<CertificateRecord> {
-    let pem = certificate.certificate();
-    let (_, pem_block) = parse_x509_pem(pem.as_bytes())
-        .map_err(|e| anyhow!("failed to parse issued certificate PEM: {e}"))?;
-    let cert = pem_block.parse_x509().map_err(|e| anyhow!(e.to_string()))?;
+    let pem_blocks = pem::parse_many(chain_pem)
+        .map_err(|err| anyhow!("failed to parse certificate chain: {err}"))?;
+    let first = pem_blocks
+        .first()
+        .ok_or_else(|| anyhow!("issued certificate chain is empty"))?;
+    let (_, cert) = parse_x509_certificate(first.contents())
+        .map_err(|e| anyhow!("failed to parse issued certificate DER: {e}"))?;
     let not_before = Utc
         .timestamp_opt(cert.validity().not_before.timestamp(), 0)
         .single()
@@ -364,12 +323,19 @@ fn build_record(
         source: CertificateSource::Managed,
         domain_roots: domains.iter().map(|d| root_from_hostname(d)).collect(),
         tags: vec![],
-        chain_pem: Some(pem.to_string()),
+        chain_pem: Some(chain_pem.to_string()),
         managed_key_ref: Some(managed_key_ref),
         key_algorithm: Some(key_algorithm),
         key_size,
         key_curve,
     })
+}
+
+fn authorized_dns_name(identifier: &instant_acme::AuthorizedIdentifier<'_>) -> Result<String> {
+    match identifier.identifier {
+        Identifier::Dns(name) => Ok(name.to_string()),
+        _ => Err(anyhow!("Only DNS identifiers are supported for DNS-01")),
+    }
 }
 
 fn format_key_label(

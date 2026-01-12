@@ -214,22 +214,29 @@ mod tests {
     }
 
     fn sample_chain() -> (String, String) {
+        // Create CA params, cert, and key
         let mut ca_params =
-            CertificateParams::new(vec!["example.com".to_string()]).expect("ca params");
+            CertificateParams::new(vec!["ca.example.com".to_string()]).expect("ca params");
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         let ca_key = KeyPair::generate().expect("ca key");
-        let ca = ca_params.self_signed(&ca_key).expect("create ca cert");
+        let ca_cert = ca_params.self_signed(&ca_key).expect("create ca cert");
+        
+        // Recreate CA params for Issuer (since self_signed consumes params)
+        let mut ca_params_for_issuer =
+            CertificateParams::new(vec!["ca.example.com".to_string()]).expect("ca params");
+        ca_params_for_issuer.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let issuer = rcgen::Issuer::new(ca_params_for_issuer, ca_key);
 
         let mut leaf_params =
             CertificateParams::new(vec!["example.com".to_string()]).expect("leaf params");
         leaf_params.is_ca = IsCa::NoCa;
         let leaf_key = KeyPair::generate().expect("leaf key");
         let leaf = leaf_params
-            .signed_by(&leaf_key, &ca, &ca_key)
+            .signed_by(&leaf_key, &issuer)
             .expect("create leaf cert");
 
         let leaf_pem = leaf.pem();
-        let ca_pem = ca.pem();
+        let ca_pem = ca_cert.pem();
         let chain_pem = format!("{leaf_pem}{ca_pem}");
         let key_pem = leaf_key.serialize_pem();
         (chain_pem, key_pem)

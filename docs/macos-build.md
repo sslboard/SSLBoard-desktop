@@ -156,18 +156,6 @@ For production builds that users can run without warnings, you need:
    
    4. Click **Continue** and save the CSR file (e.g., `CertificateSigningRequest.certSigningRequest`)
    
-   **Option B: Using Command Line**
-   
-   ```bash
-   # Generate a private key and CSR in one command
-   openssl req -new -newkey rsa:2048 -nodes \
-     -keyout private_key.key \
-     -out CertificateSigningRequest.certSigningRequest \
-     -subj "/CN=Your Name/emailAddress=your@email.com"
-   ```
-   
-   Note: If using the command line method, you'll need to import the private key into Keychain Access before exporting the `.p12` file later.
-   
    **Request the certificate from Apple:**
    
    1. Go to [Apple Developer Portal - Certificates](https://developer.apple.com/account/resources/certificates/list)
@@ -377,4 +365,3 @@ If you don't have an Apple Developer account, you can:
 3. Consider open-source distribution platforms that accept unsigned apps
 
 However, users will see security warnings, and some may be unable to run the app depending on their macOS security settings.
-

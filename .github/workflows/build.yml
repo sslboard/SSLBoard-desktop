@@ -27,40 +27,6 @@ jobs:
         with:
           toolchain: stable
       
-      - name: Setup vcpkg
-        shell: pwsh
-        run: |
-          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
-            git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-            C:\vcpkg\bootstrap-vcpkg.bat
-          }
-      
-      - name: Cache vcpkg installed packages
-        uses: actions/cache@v4
-        id: vcpkg-cache
-        with:
-          path: C:\vcpkg\installed
-          key: vcpkg-installed-openssl-x64-windows-static-md-v1
-          restore-keys: |
-            vcpkg-installed-openssl-x64-windows-static-md-v1
-            vcpkg-installed-
-      
-      - name: Install OpenSSL via vcpkg
-        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          echo "Installing OpenSSL via vcpkg. vcpkg will use its binary cache if available (faster), otherwise will build from source (~6-7 minutes)"
-          C:\vcpkg\vcpkg install openssl:x64-windows-static-md
-      
-      - name: Setup OpenSSL environment
-        shell: pwsh
-        run: |
-          $installed = "C:\vcpkg\installed\x64-windows-static-md"
-          echo "VCPKG_ROOT=C:\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "OPENSSL_DIR=$installed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "OPENSSL_LIB_DIR=$installed\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "OPENSSL_INCLUDE_DIR=$installed\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      
       - name: Install dependencies
         run: npm ci
       

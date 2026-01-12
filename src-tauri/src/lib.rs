@@ -24,6 +24,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
+    init_crypto_provider();
     if let Err(err) = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -108,6 +109,17 @@ fn init_logging() {
             log::LevelFilter::Warn,
         );
         builder.filter_module("hyper_util::client::legacy::pool", log::LevelFilter::Warn);
+        // Reduce verbosity of h2 codec frames by default
+        builder.filter_module("h2::codec", log::LevelFilter::Warn);
         builder.format_timestamp_millis().init();
+    });
+}
+
+fn init_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        if let Err(_err) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
+            log::debug!("[crypto] rustls CryptoProvider already initialized");
+        }
     });
 }
