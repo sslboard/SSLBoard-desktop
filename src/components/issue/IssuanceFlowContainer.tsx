@@ -10,7 +10,6 @@ type IssuanceResponse = StartIssuanceResponse | StartCsrIssuanceResponse;
 
 interface IssuanceFlowContainerProps {
   // Input phase
-  showInput: boolean;
   inputComponent: React.ReactNode;
 
   // Progress phase
@@ -36,7 +35,6 @@ interface IssuanceFlowContainerProps {
 }
 
 export function IssuanceFlowContainer({
-  showInput,
   inputComponent,
   loadingStart,
   startResult,
@@ -182,7 +180,6 @@ export function IssuanceFlowContainer({
           finalizing={finalizing}
           awaitingManual={awaitingManual}
           finalizeFailed={finalizeFailed}
-          hasCertificate={false}
           onContinue={onContinue}
           onRetryFinalize={onRetryFinalize}
         />

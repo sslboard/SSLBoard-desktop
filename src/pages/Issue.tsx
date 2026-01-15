@@ -206,7 +206,6 @@ export function IssuePage() {
 
       {issuanceMode === "dns" ? (
         <IssuanceFlowContainer
-          showInput={!loadingStart && !startResult && !certificate}
           inputComponent={
             <>
               <DomainsInputCard
@@ -252,7 +251,6 @@ export function IssuePage() {
 
       {issuanceMode === "csr-import" ? (
         <IssuanceFlowContainer
-          showInput={!csrLoadingStart && !csrStartResult && !csrCertificate}
           inputComponent={
             <>
               <CsrIssuanceCard

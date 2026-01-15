@@ -11,7 +11,6 @@ interface DnsInstructionsPanelProps {
   finalizing: boolean;
   awaitingManual: boolean;
   finalizeFailed: boolean;
-  hasCertificate: boolean;
   onContinue: () => void;
   onRetryFinalize: () => void;
 }
@@ -24,22 +23,9 @@ export function DnsInstructionsPanel({
   finalizing,
   awaitingManual,
   finalizeFailed,
-  hasCertificate,
   onContinue,
   onRetryFinalize,
 }: DnsInstructionsPanelProps) {
-  const dnsStatus = awaitingManual
-    ? "Waiting on you"
-    : hasCertificate
-      ? "Complete"
-      : "Queued";
-  const finalizeStatus = hasCertificate
-    ? "Complete"
-    : finalizeFailed
-      ? "Needs retry"
-      : finalizing
-        ? "Running"
-        : "Queued";
   const showContinue = hasManual && awaitingManual;
   const showRetryFinalize = finalizeFailed;
 

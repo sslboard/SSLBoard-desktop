@@ -277,16 +277,16 @@ pub fn complete_managed_dns01(
         }
     };
 
-    let record = build_record(
-        &chain_pem,
+    let record = build_record(BuildRecordParams {
+        chain_pem: chain_pem.clone(),
         domains,
-        Some(managed_key_ref.clone()),
-        Some(key_algorithm),
+        managed_key_ref: Some(managed_key_ref.clone()),
+        key_algorithm: Some(key_algorithm),
         key_size,
         key_curve,
-        None,
-        None,
-    )?;
+        csr_metadata: None,
+        csr_source: None,
+    })?;
     inventory.insert_certificate(&record)?;
 
     // Best-effort check the key still resolves
@@ -346,6 +346,8 @@ struct PendingCsrIssuance {
     dns_records_to_cleanup: Vec<(String, String)>,
 }
 
+type StartCsrDns01Result = (String, Vec<DnsRecordInstruction>, CsrMetadata, Vec<String>, Vec<String>);
+
 #[allow(clippy::too_many_arguments)]
 pub fn start_csr_dns01(
     issuer_id: String,
@@ -356,7 +358,7 @@ pub fn start_csr_dns01(
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
     app: &tauri::AppHandle,
-) -> Result<(String, Vec<DnsRecordInstruction>, CsrMetadata, Vec<String>, Vec<String>)> {
+) -> Result<StartCsrDns01Result> {
     log::info!(
         "[acme] starting CSR issuance issuer_id={} csr_path={}",
         issuer_id,
@@ -536,26 +538,25 @@ pub fn complete_csr_dns01(
         }
     };
 
-    let record = build_record(
-        &chain_pem,
-        identifiers,
-        managed_key_ref.clone(),
-        Some(csr_metadata.key_algorithm.clone()),
-        csr_metadata.key_size,
-        csr_metadata.key_curve.clone(),
-        Some(csr_metadata),
-        Some(csr_source),
-    )?;
+    let record = build_record(BuildRecordParams {
+        chain_pem: chain_pem.clone(),
+        domains: identifiers,
+        managed_key_ref: managed_key_ref.clone(),
+        key_algorithm: Some(csr_metadata.key_algorithm.clone()),
+        key_size: csr_metadata.key_size,
+        key_curve: csr_metadata.key_curve.clone(),
+        csr_metadata: Some(csr_metadata),
+        csr_source: Some(csr_source),
+    })?;
     inventory.insert_certificate(&record)?;
 
-    if let Some(ref key_ref) = managed_key_ref {
-        if let Err(err) = secrets.resolve_secret(key_ref) {
-            log::warn!(
-                "[issuance] managed key ref {} failed to resolve after CSR issuance: {}",
-                key_ref,
-                err
-            );
-        }
+    if let Some(ref key_ref) = managed_key_ref
+        && let Err(err) = secrets.resolve_secret(key_ref) {
+        log::warn!(
+            "[issuance] managed key ref {} failed to resolve after CSR issuance: {}",
+            key_ref,
+            err
+        );
     }
 
     for (domain, record_name) in dns_records_to_cleanup {
@@ -594,8 +595,8 @@ pub fn complete_csr_dns01(
     Ok(record)
 }
 
-fn build_record(
-    chain_pem: &str,
+struct BuildRecordParams {
+    chain_pem: String,
     domains: Vec<String>,
     managed_key_ref: Option<String>,
     key_algorithm: Option<KeyAlgorithm>,
@@ -603,8 +604,20 @@ fn build_record(
     key_curve: Option<KeyCurve>,
     csr_metadata: Option<CsrMetadata>,
     csr_source: Option<CsrSource>,
-) -> Result<CertificateRecord> {
-    let pem_blocks = pem::parse_many(chain_pem)
+}
+
+fn build_record(params: BuildRecordParams) -> Result<CertificateRecord> {
+    let BuildRecordParams {
+        chain_pem,
+        domains,
+        managed_key_ref,
+        key_algorithm,
+        key_size,
+        key_curve,
+        csr_metadata,
+        csr_source,
+    } = params;
+    let pem_blocks = pem::parse_many(&chain_pem)
         .map_err(|err| anyhow!("failed to parse certificate chain: {err}"))?;
     let first = pem_blocks
         .first()
@@ -645,7 +658,7 @@ fn build_record(
         source: CertificateSource::Managed,
         domain_roots: domains.iter().map(|d| root_from_hostname(d)).collect(),
         tags: vec![],
-        chain_pem: Some(chain_pem.to_string()),
+        chain_pem: Some(chain_pem),
         managed_key_ref,
         key_algorithm,
         key_size,

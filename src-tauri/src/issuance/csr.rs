@@ -63,13 +63,12 @@ pub fn parse_and_validate_csr_bytes(bytes: &[u8]) -> Result<ParsedCsr> {
 }
 
 fn parse_csr_der(bytes: &[u8]) -> Result<Vec<u8>> {
-    if let Ok(text) = std::str::from_utf8(bytes) {
-        if let Ok(pem) = pem::parse(text) {
-            if !pem.tag().contains("REQUEST") {
-                return Err(anyhow!("CSR PEM must have CERTIFICATE REQUEST tag"));
-            }
-            return Ok(pem.contents().to_vec());
+    if let Ok(text) = std::str::from_utf8(bytes)
+        && let Ok(pem) = pem::parse(text) {
+        if !pem.tag().contains("REQUEST") {
+            return Err(anyhow!("CSR PEM must have CERTIFICATE REQUEST tag"));
         }
+        return Ok(pem.contents().to_vec());
     }
 
     Ok(bytes.to_vec())
@@ -77,8 +76,8 @@ fn parse_csr_der(bytes: &[u8]) -> Result<Vec<u8>> {
 
 fn extract_dns_sans(csr: &X509CertificationRequest<'_>) -> Result<Vec<String>> {
     let mut sans = Vec::new();
-    if let Some(mut extensions) = csr.requested_extensions() {
-        while let Some(ext) = extensions.next() {
+    if let Some(extensions) = csr.requested_extensions() {
+        for ext in extensions {
             if let ParsedExtension::SubjectAlternativeName(san) = ext {
                 for name in &san.general_names {
                     if let GeneralName::DNSName(dns) = name {
