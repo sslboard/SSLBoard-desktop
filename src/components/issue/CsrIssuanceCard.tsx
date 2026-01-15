@@ -21,6 +21,7 @@ interface CsrIssuanceCardProps {
   onClearCsr: () => void;
   onStart: () => void;
   onReset: () => void;
+  disabled?: boolean;
 }
 
 function formatKeyInfo(result: CsrValidationResult | null): string {
@@ -51,8 +52,23 @@ export function CsrIssuanceCard({
   onClearCsr,
   onStart,
   onReset,
+  disabled = false,
 }: CsrIssuanceCardProps) {
-  const identifiers = useMemo(() => csrResult?.identifiers ?? [], [csrResult]);
+  // Extract identifiers for DNS provider preview display only
+  // We don't block issuance based on this - the backend validates the CSR
+  const identifiers = useMemo(() => {
+    if (!csrResult) return [];
+    // Use identifiers if available
+    if (csrResult.identifiers.length > 0) {
+      return csrResult.identifiers;
+    }
+    // Fallback to SANs for preview purposes
+    if (csrResult.metadata.sans.length > 0) {
+      return csrResult.metadata.sans;
+    }
+    // If no identifiers or SANs, return empty (preview won't show, but issuance can still proceed)
+    return [];
+  }, [csrResult]);
   const { providerPreview, providerLoading, providerError } = useProviderPreview(identifiers);
 
   return (
@@ -147,10 +163,12 @@ export function CsrIssuanceCard({
           <Button
             onClick={() => void onStart()}
             disabled={
+              disabled ||
               loadingStart ||
               hasStartResult ||
               !issuerReady ||
-              identifiers.length === 0
+              !csrResult ||
+              !!csrError
             }
           >
             {loadingStart && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

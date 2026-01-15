@@ -46,24 +46,10 @@ export function DnsInstructionsPanel({
   return (
     <div className="space-y-4 rounded-lg border bg-muted/40 p-4">
       <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-        Issuance progress
+        DNS instructions
         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
           {dnsModeLabel}
         </span>
-      </div>
-      <div className="grid gap-2 text-sm text-muted-foreground">
-        <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-          <span>Start issuance</span>
-          <span className="text-xs font-semibold text-emerald-600">Complete</span>
-        </div>
-        <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-          <span>DNS verification</span>
-          <span className="text-xs font-semibold">{dnsStatus}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-          <span>Finalize issuance</span>
-          <span className="text-xs font-semibold">{finalizeStatus}</span>
-        </div>
       </div>
       {hasManaged && !hasManual && (
         <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">

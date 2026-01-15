@@ -21,6 +21,8 @@ use crate::{
     secrets::{manager::SecretManager, types::SecretKind},
     storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
 };
+use tauri::Emitter;
+use log::error;
 
 struct PendingIssuance {
     order: Order,
@@ -45,6 +47,25 @@ fn csr_sessions() -> &'static Mutex<HashMap<String, PendingCsrIssuance>> {
     CSR_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Helper function to emit issuance progress events
+fn emit_issuance_event(
+    app: &tauri::AppHandle,
+    request_id: &str,
+    step: &str,
+    status: &str,
+    error: Option<&str>,
+) {
+    let payload = serde_json::json!({
+        "request_id": request_id,
+        "step": step,
+        "status": status,
+        "error": error,
+    });
+    if let Err(err) = app.emit("issuance-progress", payload) {
+        error!("[issuance] failed to emit issuance-progress event: {}", err);
+    }
+}
+
 /// Starts a managed-key ACME DNS-01 issuance and returns DNS instructions plus a request id.
 #[allow(clippy::too_many_arguments)]
 pub fn start_managed_dns01(
@@ -56,12 +77,20 @@ pub fn start_managed_dns01(
     issuer_store: &IssuerConfigStore,
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
+    app: &tauri::AppHandle,
 ) -> Result<(String, Vec<DnsRecordInstruction>)> {
     log::info!(
         "[acme] starting managed issuance issuer_id={} domains={:?}",
         issuer_id,
         domains
     );
+    
+    // Generate request_id early so we can use it for events
+    let request_id = Uuid::new_v4().to_string();
+    
+    // Emit event right before starting the flow
+    emit_issuance_event(app, &request_id, "starting", "started", None);
+    
     let normalized = acme_workflow::validate_and_normalize_domains(domains)?;
 
     let issuer = issuer_store
@@ -117,6 +146,9 @@ pub fn start_managed_dns01(
         "[acme] prepared {} DNS-01 record(s) for issuance",
         dns_records.len()
     );
+    
+    // Emit event when challenges are received from ACME
+    emit_issuance_event(app, &request_id, "challenges-received", "complete", None);
 
     let primary = normalized
         .first()
@@ -137,7 +169,6 @@ pub fn start_managed_dns01(
         )
         .map_err(|e| anyhow!(e.to_string()))?;
 
-    let request_id = Uuid::new_v4().to_string();
     let pending = PendingIssuance {
         order: new_order,
         domains: normalized,
@@ -163,8 +194,13 @@ pub fn complete_managed_dns01(
     inventory: &InventoryStore,
     secrets: &SecretManager,
     dns_store: &DnsConfigStore,
+    app: &tauri::AppHandle,
 ) -> Result<CertificateRecord> {
     log::info!("[acme] completing issuance request_id={}", request_id);
+    
+    // Emit event when DNS verification starts
+    emit_issuance_event(app, request_id, "dns-verification", "started", None);
+    
     let pending = sessions()
         .lock()
         .map_err(|e| anyhow!(e.to_string()))?
@@ -185,7 +221,7 @@ pub fn complete_managed_dns01(
     let csr_der = acme_workflow::build_csr_der(&managed_key_pem, &domains)?;
     let retry_policy = RetryPolicy::new().timeout(Duration::from_secs(60));
 
-    let chain_pem = tauri::async_runtime::block_on(async {
+    let chain_pem = match tauri::async_runtime::block_on(async {
         log::debug!("[acme] validating DNS-01 challenges");
         let mut authorizations = order.authorizations();
         while let Some(result) = authorizations.next().await {
@@ -217,12 +253,29 @@ pub fn complete_managed_dns01(
             return Err(anyhow!("unexpected order status: {status:?}"));
         }
 
+        // DNS verification is complete
+        emit_issuance_event(app, request_id, "dns-verification", "complete", None);
+        
+        // Emit event when finalization starts
+        emit_issuance_event(app, request_id, "finalization", "started", None);
+
         log::debug!("[acme] finalizing order with CSR");
         order.finalize_csr(&csr_der).await?;
         log::debug!("[acme] polling for certificate chain");
         order.poll_certificate(&retry_policy).await.map_err(|e| e.into())
-    })?;
-    log::info!("[acme] certificate chain received");
+    }) {
+        Ok(chain) => {
+            log::info!("[acme] certificate chain received");
+            emit_issuance_event(app, request_id, "finalization", "complete", None);
+            chain
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            emit_issuance_event(app, request_id, "dns-verification", "complete", Some(&error_msg));
+            emit_issuance_event(app, request_id, "finalization", "complete", Some(&error_msg));
+            return Err(e);
+        }
+    };
 
     let record = build_record(
         &chain_pem,
@@ -302,12 +355,19 @@ pub fn start_csr_dns01(
     issuer_store: &IssuerConfigStore,
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
+    app: &tauri::AppHandle,
 ) -> Result<(String, Vec<DnsRecordInstruction>, CsrMetadata, Vec<String>, Vec<String>)> {
     log::info!(
         "[acme] starting CSR issuance issuer_id={} csr_path={}",
         issuer_id,
         csr_path
     );
+    
+    // Generate request_id early so we can use it for events
+    let request_id = Uuid::new_v4().to_string();
+    
+    // Emit event right before starting the flow
+    emit_issuance_event(app, &request_id, "starting", "started", None);
 
     let parsed = csr_tools::load_and_validate_csr(&csr_path)?;
 
@@ -364,8 +424,10 @@ pub fn start_csr_dns01(
             dns_store,
             secrets,
         ))?;
+    
+    // Emit event when challenges are received from ACME
+    emit_issuance_event(app, &request_id, "challenges-received", "complete", None);
 
-    let request_id = Uuid::new_v4().to_string();
     let pending = PendingCsrIssuance {
         order: new_order,
         identifiers: parsed.identifiers.clone(),
@@ -395,8 +457,13 @@ pub fn complete_csr_dns01(
     inventory: &InventoryStore,
     secrets: &SecretManager,
     dns_store: &DnsConfigStore,
+    app: &tauri::AppHandle,
 ) -> Result<CertificateRecord> {
     log::info!("[acme] completing CSR issuance request_id={}", request_id);
+    
+    // Emit event when DNS verification starts
+    emit_issuance_event(app, request_id, "dns-verification", "started", None);
+    
     let pending = csr_sessions()
         .lock()
         .map_err(|e| anyhow!(e.to_string()))?
@@ -414,7 +481,7 @@ pub fn complete_csr_dns01(
     } = pending;
 
     let retry_policy = RetryPolicy::new().timeout(Duration::from_secs(60));
-    let chain_pem = tauri::async_runtime::block_on(async {
+    let chain_pem = match tauri::async_runtime::block_on(async {
         log::debug!("[acme] validating DNS-01 challenges for CSR issuance");
         let mut authorizations = order.authorizations();
         while let Some(result) = authorizations.next().await {
@@ -446,11 +513,28 @@ pub fn complete_csr_dns01(
             return Err(anyhow!("unexpected order status: {status:?}"));
         }
 
+        // DNS verification is complete
+        emit_issuance_event(app, request_id, "dns-verification", "complete", None);
+        
+        // Emit event when finalization starts
+        emit_issuance_event(app, request_id, "finalization", "started", None);
+
         log::debug!("[acme] finalizing CSR order");
         order.finalize_csr(&csr_der).await?;
         log::debug!("[acme] polling CSR certificate chain");
         order.poll_certificate(&retry_policy).await.map_err(|e| e.into())
-    })?;
+    }) {
+        Ok(chain) => {
+            emit_issuance_event(app, request_id, "finalization", "complete", None);
+            chain
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            emit_issuance_event(app, request_id, "dns-verification", "complete", Some(&error_msg));
+            emit_issuance_event(app, request_id, "finalization", "complete", Some(&error_msg));
+            return Err(e);
+        }
+    };
 
     let record = build_record(
         &chain_pem,

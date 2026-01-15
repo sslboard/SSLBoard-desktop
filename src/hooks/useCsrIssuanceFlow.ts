@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import {
   completeCsrIssuance,
   startCsrIssuance,
@@ -7,6 +7,7 @@ import {
 } from "../lib/issuance";
 import { normalizeError } from "../lib/errors";
 import type { CertificateRecord } from "../lib/certificates";
+import { useIssuanceEvents, type IssuanceEventState } from "./useIssuanceEvents";
 
 export function useCsrIssuanceFlow(
   selectedIssuerId: string | null,
@@ -21,7 +22,23 @@ export function useCsrIssuanceFlow(
   const [certificate, setCertificate] = useState<CertificateRecord | null>(null);
   const [awaitingManual, setAwaitingManual] = useState(false);
   const [finalizeFailed, setFinalizeFailed] = useState(false);
+  const [eventState, setEventState] = useState<IssuanceEventState | null>(null);
   const flowTokenRef = useRef(0);
+  
+  // Listen to issuance events - only active when this flow is in progress
+  const handleEvent = useCallback((state: IssuanceEventState) => {
+    setEventState(state);
+    if (state.error) {
+      setError(state.error);
+      if (state.step === "dns-verification" || state.step === "dns-complete") {
+        setFinalizeFailed(true);
+      }
+    }
+  }, []);
+  
+  // Only listen when this flow is active (loading or has a result)
+  const isActive = loadingStart || startResult !== null || finalizing;
+  useIssuanceEvents(handleEvent, isActive);
 
   function nextFlowToken() {
     flowTokenRef.current += 1;
@@ -146,6 +163,7 @@ export function useCsrIssuanceFlow(
     dnsModeLabel,
     awaitingManual,
     finalizeFailed,
+    eventState,
     handleStart,
     continueIssuance,
     retryFinalization,

@@ -30,6 +30,7 @@ interface DomainsInputCardProps {
   onKeyOptionChange: (value: IssuanceKeyOption) => void;
   onStart: () => void;
   onReset: () => void;
+  disabled?: boolean;
 }
 
 export function DomainsInputCard({
@@ -48,6 +49,7 @@ export function DomainsInputCard({
   onKeyOptionChange,
   onStart,
   onReset,
+  disabled = false,
 }: DomainsInputCardProps) {
   return (
     <Card className="shadow-soft">
@@ -122,7 +124,7 @@ export function DomainsInputCard({
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={() => void onStart()}
-            disabled={loadingStart || hasStartResult || !parsedDomains.length || !issuerReady}
+            disabled={disabled || loadingStart || hasStartResult || !parsedDomains.length || !issuerReady}
           >
             {loadingStart && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Start issuance

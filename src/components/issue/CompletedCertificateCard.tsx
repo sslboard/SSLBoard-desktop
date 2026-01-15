@@ -9,6 +9,7 @@ import { formatCertificateDate, primarySubject } from "../certificates/certifica
 
 interface CompletedCertificateCardProps {
   certificate: CertificateRecord;
+  onIssueAnother?: () => void;
 }
 
 function formatKeyInfo(record: CertificateRecord): string {
@@ -34,6 +35,7 @@ function formatCsrSource(source?: CertificateRecord["csr_source"]): string {
 
 export function CompletedCertificateCard({
   certificate,
+  onIssueAnother,
 }: CompletedCertificateCardProps) {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -71,6 +73,11 @@ export function CompletedCertificateCard({
           Certificate issued
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
+          {onIssueAnother && (
+            <Button size="sm" onClick={onIssueAnother}>
+              Issue another
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => void handleCopy()}>
             <Copy className="mr-2 h-4 w-4" />
             Copy details

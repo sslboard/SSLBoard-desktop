@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use tauri::{async_runtime::spawn_blocking, State};
+use tauri::{async_runtime::spawn_blocking, AppHandle, State};
 
 use crate::core::types::{
     CertificateRecord, CompleteCsrIssuanceRequest, CompleteIssuanceRequest, CsrValidationResult,
@@ -16,6 +16,7 @@ use crate::storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::Iss
 /// Starts a managed-key ACME issuance and returns DNS-01 instructions plus a request id.
 #[tauri::command]
 pub async fn start_managed_issuance(
+    app: AppHandle,
     issuer_store: State<'_, IssuerConfigStore>,
     dns_store: State<'_, DnsConfigStore>,
     secrets: State<'_, SecretManager>,
@@ -24,6 +25,7 @@ pub async fn start_managed_issuance(
     let issuer_store = issuer_store.inner().clone();
     let dns_store = dns_store.inner().clone();
     let secrets = secrets.inner().clone();
+    let app_handle = app.clone();
     spawn_blocking(move || {
         start_managed_dns01(
             start_req.domains,
@@ -34,6 +36,7 @@ pub async fn start_managed_issuance(
             &issuer_store,
             &dns_store,
             &secrets,
+            &app_handle,
         )
         .map(|(request_id, dns_records)| StartIssuanceResponse {
             request_id,
@@ -48,6 +51,7 @@ pub async fn start_managed_issuance(
 /// Completes a managed-key ACME issuance after DNS-01 is satisfied.
 #[tauri::command]
 pub async fn complete_managed_issuance(
+    app: AppHandle,
     inventory: State<'_, InventoryStore>,
     secrets: State<'_, SecretManager>,
     dns_store: State<'_, DnsConfigStore>,
@@ -56,8 +60,9 @@ pub async fn complete_managed_issuance(
     let inventory = inventory.inner().clone();
     let secrets = secrets.inner().clone();
     let dns_store = dns_store.inner().clone();
+    let app_handle = app.clone();
     spawn_blocking(move || {
-        complete_managed_dns01(&complete_req.request_id, &inventory, &secrets, &dns_store)
+        complete_managed_dns01(&complete_req.request_id, &inventory, &secrets, &dns_store, &app_handle)
     })
         .await
         .map_err(|err| format!("Complete issuance join error: {err}"))?
@@ -132,6 +137,7 @@ pub async fn generate_csr(
 /// Starts a CSR-based ACME issuance and returns DNS-01 instructions plus a request id.
 #[tauri::command]
 pub async fn start_csr_issuance(
+    app: AppHandle,
     issuer_store: State<'_, IssuerConfigStore>,
     dns_store: State<'_, DnsConfigStore>,
     secrets: State<'_, SecretManager>,
@@ -140,6 +146,7 @@ pub async fn start_csr_issuance(
     let issuer_store = issuer_store.inner().clone();
     let dns_store = dns_store.inner().clone();
     let secrets = secrets.inner().clone();
+    let app_handle = app.clone();
     spawn_blocking(move || {
         start_csr_dns01(
             start_req.issuer_id,
@@ -149,6 +156,7 @@ pub async fn start_csr_issuance(
             &issuer_store,
             &dns_store,
             &secrets,
+            &app_handle,
         )
         .map(|(request_id, dns_records, metadata, identifiers, warnings)| {
             StartCsrIssuanceResponse {
@@ -170,6 +178,7 @@ pub async fn start_csr_issuance(
 /// Completes a CSR-based ACME issuance after DNS-01 is satisfied.
 #[tauri::command]
 pub async fn complete_csr_issuance(
+    app: AppHandle,
     inventory: State<'_, InventoryStore>,
     secrets: State<'_, SecretManager>,
     dns_store: State<'_, DnsConfigStore>,
@@ -178,8 +187,9 @@ pub async fn complete_csr_issuance(
     let inventory = inventory.inner().clone();
     let secrets = secrets.inner().clone();
     let dns_store = dns_store.inner().clone();
+    let app_handle = app.clone();
     spawn_blocking(move || {
-        complete_csr_dns01(&complete_req.request_id, &inventory, &secrets, &dns_store)
+        complete_csr_dns01(&complete_req.request_id, &inventory, &secrets, &dns_store, &app_handle)
     })
         .await
         .map_err(|err| format!("Complete CSR issuance join error: {err}"))?
