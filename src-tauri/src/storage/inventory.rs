@@ -43,8 +43,8 @@ impl InventoryStore {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            , key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source FROM certificate_records
+            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, issuer_id, domain_roots, tags, managed_key_ref, chain_pem
+            , key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source, renewed_from, revoked_at, revocation_reason FROM certificate_records
             ORDER BY not_after DESC
             "#,
         )?;
@@ -74,8 +74,8 @@ impl InventoryStore {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem
-            , key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source FROM certificate_records
+            SELECT id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, issuer_id, domain_roots, tags, managed_key_ref, chain_pem
+            , key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source, renewed_from, revoked_at, revocation_reason FROM certificate_records
             WHERE id = ?1
             "#,
         )?;
@@ -144,6 +144,7 @@ impl InventoryStore {
             not_after: now + Duration::days(330),
             fingerprint: "15:9A:53:1E:72:2B:B3:91:DD:41:18:52:73:AF:35:A4:10:AC:9C:0A:68:F3:1C:90:E2:8B:F4:0C:CB:12:EF".to_string(),
             source: CertificateSource::Managed,
+            issuer_id: None,
             domain_roots: vec!["sslboard.test".to_string()],
             tags: vec!["demo".to_string(), "sandbox".to_string()],
             managed_key_ref: None,
@@ -157,6 +158,9 @@ impl InventoryStore {
             csr_key_size: None,
             csr_key_curve: None,
             csr_source: None,
+            renewed_from: None,
+            revoked_at: None,
+            revocation_reason: None,
         };
 
         Self::insert_with_conn(&mut conn, &sample)
@@ -180,8 +184,8 @@ impl InventoryStore {
         conn.execute(
             r#"
             INSERT OR REPLACE INTO certificate_records (
-                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, domain_roots, tags, managed_key_ref, chain_pem, key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                id, subjects, sans, issuer, serial, not_before, not_after, fingerprint, source, issuer_id, domain_roots, tags, managed_key_ref, chain_pem, key_algorithm, key_size, key_curve, csr_subject, csr_sans, csr_key_algorithm, csr_key_size, csr_key_curve, csr_source, renewed_from, revoked_at, revocation_reason
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
             "#,
             params![
                 record.id,
@@ -196,6 +200,7 @@ impl InventoryStore {
                     CertificateSource::External => "External",
                     CertificateSource::Managed => "Managed",
                 },
+                record.issuer_id,
                 serde_json::to_string(&record.domain_roots)?,
                 serde_json::to_string(&record.tags)?,
                 record.managed_key_ref,
@@ -213,6 +218,9 @@ impl InventoryStore {
                 record.csr_key_size,
                 key_curve_to_db(&record.csr_key_curve),
                 csr_source_to_db(&record.csr_source),
+                record.renewed_from,
+                record.revoked_at.map(|value| value.to_rfc3339()),
+                record.revocation_reason,
             ],
         )?;
         Ok(())
@@ -242,19 +250,23 @@ impl InventoryStore {
         let not_after_raw: String = row.get(6)?;
         let fingerprint: String = row.get(7)?;
         let source_raw: String = row.get(8)?;
-        let domain_roots_raw: String = row.get(9)?;
-        let tags_raw: String = row.get(10)?;
-        let managed_key_ref: Option<String> = row.get(11)?;
-        let chain_pem: Option<String> = row.get(12)?;
-        let key_algorithm_raw: Option<String> = row.get(13)?;
-        let key_size: Option<u16> = row.get(14)?;
-        let key_curve_raw: Option<String> = row.get(15)?;
-        let csr_subject: Option<String> = row.get(16)?;
-        let csr_sans_raw: Option<String> = row.get(17)?;
-        let csr_key_algorithm_raw: Option<String> = row.get(18)?;
-        let csr_key_size: Option<u16> = row.get(19)?;
-        let csr_key_curve_raw: Option<String> = row.get(20)?;
-        let csr_source_raw: Option<String> = row.get(21)?;
+        let issuer_id: Option<String> = row.get(9)?;
+        let domain_roots_raw: String = row.get(10)?;
+        let tags_raw: String = row.get(11)?;
+        let managed_key_ref: Option<String> = row.get(12)?;
+        let chain_pem: Option<String> = row.get(13)?;
+        let key_algorithm_raw: Option<String> = row.get(14)?;
+        let key_size: Option<u16> = row.get(15)?;
+        let key_curve_raw: Option<String> = row.get(16)?;
+        let csr_subject: Option<String> = row.get(17)?;
+        let csr_sans_raw: Option<String> = row.get(18)?;
+        let csr_key_algorithm_raw: Option<String> = row.get(19)?;
+        let csr_key_size: Option<u16> = row.get(20)?;
+        let csr_key_curve_raw: Option<String> = row.get(21)?;
+        let csr_source_raw: Option<String> = row.get(22)?;
+        let renewed_from: Option<String> = row.get(23)?;
+        let revoked_at_raw: Option<String> = row.get(24)?;
+        let revocation_reason: Option<String> = row.get(25)?;
 
         let source = match source_raw.as_str() {
             "External" => CertificateSource::External,
@@ -268,6 +280,14 @@ impl InventoryStore {
         let not_after = chrono::DateTime::parse_from_rfc3339(&not_after_raw)
             .map(|dt| dt.with_timezone(&Utc))
             .context("failed to parse not_after timestamp")?;
+        let revoked_at = match revoked_at_raw {
+            Some(value) => Some(
+                chrono::DateTime::parse_from_rfc3339(&value)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .context("failed to parse revoked_at timestamp")?,
+            ),
+            None => None,
+        };
 
         Ok(CertificateRecord {
             id,
@@ -280,6 +300,7 @@ impl InventoryStore {
             not_after,
             fingerprint,
             source,
+            issuer_id,
             domain_roots: serde_json::from_str(&domain_roots_raw)
                 .context("failed to deserialize domain_roots")?,
             tags: serde_json::from_str(&tags_raw).context("failed to deserialize tags")?,
@@ -296,6 +317,9 @@ impl InventoryStore {
             csr_key_size,
             csr_key_curve: parse_key_curve(csr_key_curve_raw)?,
             csr_source: parse_csr_source(csr_source_raw)?,
+            renewed_from,
+            revoked_at,
+            revocation_reason,
         })
     }
 

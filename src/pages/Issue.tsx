@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ShieldCheck } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "../components/ui/button";
 import { PageHeader } from "../components/page-header";
@@ -20,9 +20,12 @@ import {
   type GenerateCsrResponse,
 } from "../lib/issuance";
 import { normalizeError } from "../lib/errors";
+import type { RenewalPrefill } from "../components/certificates/renewal-utils";
 
 export function IssuePage() {
   const pageState = useIssuePageState();
+  const location = useLocation();
+  const [renewalContext, setRenewalContext] = useState<RenewalPrefill | null>(null);
   const {
     issuers,
     issuerLoading,
@@ -42,6 +45,9 @@ export function IssuePage() {
   const { providerPreview, providerLoading, providerError } =
     useProviderPreview(parsedDomains);
 
+  const reuseKeyRef = pageState.reuseKeyEnabled ? pageState.reuseKeyRef : null;
+  const renewingCertId = renewalContext?.renewing_cert_id ?? null;
+
   const {
     startResult,
     loadingStart,
@@ -59,7 +65,13 @@ export function IssuePage() {
     continueIssuance,
     retryFinalization,
     reset,
-  } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, pageState.keyOption);
+  } = useManagedIssuanceFlow(
+    selectedIssuer?.issuer_id ?? null,
+    parsedDomains,
+    pageState.keyOption,
+    reuseKeyRef,
+    renewingCertId,
+  );
 
   const {
     startResult: csrStartResult,
@@ -96,6 +108,56 @@ export function IssuePage() {
     selectedIssuer.tos_agreed,
   );
 
+  const locationState = location.state as { renewal?: RenewalPrefill } | null;
+  const renewalFromLocation = locationState?.renewal ?? null;
+
+  useEffect(() => {
+    if (!renewalFromLocation) {
+      return;
+    }
+    if (renewalContext?.renewing_cert_id === renewalFromLocation.renewing_cert_id) {
+      return;
+    }
+    setRenewalContext(renewalFromLocation);
+    pageState.setIssuanceMode("dns");
+    pageState.resetCsrState();
+    if (renewalFromLocation.domains.length > 0) {
+      pageState.setDomainsInput(renewalFromLocation.domains.join("\n"));
+    }
+    if (renewalFromLocation.key_option) {
+      pageState.setKeyOption(renewalFromLocation.key_option);
+    }
+    pageState.setReuseKeyRef(renewalFromLocation.key_ref ?? null);
+    pageState.setReuseKeyEnabled(false);
+  }, [
+    pageState,
+    renewalContext?.renewing_cert_id,
+    renewalFromLocation,
+  ]);
+
+  useEffect(() => {
+    if (!renewalContext) return;
+    if (renewalContext.issuer_id) {
+      selectIssuerById(renewalContext.issuer_id);
+      return;
+    }
+    const hint = renewalContext.issuer_hint?.toLowerCase().trim();
+    if (!hint) return;
+    const exactMatch = issuers.find(
+      (issuer) => issuer.label.toLowerCase() === hint,
+    );
+    if (exactMatch) {
+      selectIssuerById(exactMatch.issuer_id);
+      return;
+    }
+    const partialMatch = issuers.find((issuer) =>
+      issuer.label.toLowerCase().includes(hint),
+    );
+    if (partialMatch) {
+      selectIssuerById(partialMatch.issuer_id);
+    }
+  }, [issuers, renewalContext, selectIssuerById]);
+
   // Determine if each flow is active (only one can be active at a time)
   const managedFlowActive = loadingStart || startResult !== null || finalizing;
   const csrFlowActive = csrLoadingStart || csrStartResult !== null || csrFinalizing;
@@ -119,8 +181,11 @@ export function IssuePage() {
           providerLoading={providerLoading}
           providerError={providerError}
           keyOption={pageState.keyOption}
+          reuseKeyAvailable={Boolean(pageState.reuseKeyRef)}
+          reuseKeyEnabled={pageState.reuseKeyEnabled}
           onDomainsChange={pageState.setDomainsInput}
           onKeyOptionChange={pageState.setKeyOption}
+          onReuseKeyToggle={pageState.setReuseKeyEnabled}
           onStart={handleStart}
           onReset={handleReset}
           disabled={managedFlowDisabled}
@@ -194,11 +259,13 @@ export function IssuePage() {
 
   function handleReset() {
     pageState.resetDomainsState();
+    setRenewalContext(null);
     reset();
   }
 
   function handleIssueAnother() {
     pageState.resetDomainsState();
+    setRenewalContext(null);
     reset();
   }
 
@@ -246,7 +313,11 @@ export function IssuePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Issue"
+        title={
+          renewalContext?.label
+            ? `Renewing: ${renewalContext.label}`
+            : "Issue"
+        }
         description={`Issue a ${issuerDescription} certificate via ACME DNS-01 with automatic providers or manual fallback.`}
         action={
           <Button asChild variant="secondary">

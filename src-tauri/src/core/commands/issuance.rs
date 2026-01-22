@@ -33,6 +33,8 @@ pub async fn start_managed_issuance(
             start_req.key_algorithm,
             start_req.key_size,
             start_req.key_curve,
+            start_req.reuse_key_ref,
+            start_req.renewing_cert_id,
             &issuer_store,
             &dns_store,
             &secrets,

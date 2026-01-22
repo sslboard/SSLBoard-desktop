@@ -33,6 +33,8 @@ export type StartIssuanceRequest = {
   key_algorithm?: KeyAlgorithm;
   key_size?: number;
   key_curve?: KeyCurve;
+  reuse_key_ref?: string | null;
+  renewing_cert_id?: string | null;
 };
 
 export type StartIssuanceResponse = {

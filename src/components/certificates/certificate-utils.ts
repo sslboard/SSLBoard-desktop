@@ -20,6 +20,9 @@ export function daysUntil(dateString: string) {
 }
 
 export function certificateStatus(record: CertificateRecord) {
+  if (record.revoked_at) {
+    return { label: "Revoked", tone: "text-red-600 bg-red-50 dark:bg-red-950/40" };
+  }
   const days = daysUntil(record.not_after);
   if (days < 0) {
     return { label: "Expired", tone: "text-red-500 bg-red-50 dark:bg-red-950/40" };

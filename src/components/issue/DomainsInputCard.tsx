@@ -1,6 +1,7 @@
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Checkbox } from "../ui/checkbox";
 import { Label } from "../ui/label";
 import {
   Select,
@@ -10,6 +11,12 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Textarea } from "../ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../ui/tooltip";
 import { DnsProviderPreviewCard } from "./DnsProviderPreviewCard";
 import type { DnsProviderResolution } from "../../lib/dns-providers";
 import type { IssuanceKeyOption } from "../../lib/issuance";
@@ -26,8 +33,11 @@ interface DomainsInputCardProps {
   providerLoading: boolean;
   providerError: string | null;
   keyOption: IssuanceKeyOption;
+  reuseKeyAvailable?: boolean;
+  reuseKeyEnabled?: boolean;
   onDomainsChange: (value: string) => void;
   onKeyOptionChange: (value: IssuanceKeyOption) => void;
+  onReuseKeyToggle?: (value: boolean) => void;
   onStart: () => void;
   onReset: () => void;
   disabled?: boolean;
@@ -45,8 +55,11 @@ export function DomainsInputCard({
   providerLoading,
   providerError,
   keyOption,
+  reuseKeyAvailable = false,
+  reuseKeyEnabled = false,
   onDomainsChange,
   onKeyOptionChange,
+  onReuseKeyToggle,
   onStart,
   onReset,
   disabled = false,
@@ -103,7 +116,7 @@ export function DomainsInputCard({
             onValueChange={(value) =>
               onKeyOptionChange(value as IssuanceKeyOption)
             }
-            disabled={loadingStart || hasStartResult}
+            disabled={loadingStart || hasStartResult || reuseKeyEnabled}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select key algorithm" />
@@ -120,6 +133,40 @@ export function DomainsInputCard({
             Choose a key type and size/curve for this issuance run.
           </p>
         </div>
+
+        {reuseKeyAvailable ? (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="reuse-key"
+                  checked={reuseKeyEnabled}
+                  onCheckedChange={(value) =>
+                    onReuseKeyToggle?.(Boolean(value))
+                  }
+                  disabled={loadingStart || hasStartResult}
+                />
+                <Label htmlFor="reuse-key">Reuse existing private key</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border text-muted-foreground">
+                        <Info className="h-3 w-3" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Reusing the key preserves pinning/allowlists but skips key rotation.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <span className="text-xs text-muted-foreground">Managed key found</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Turn this off to generate a fresh key pair for stronger rotation hygiene.
+            </p>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-3">
           <Button

@@ -12,10 +12,14 @@ export function useIssuePageState() {
   const [csrError, setCsrError] = useState<string | null>(null);
   const [csrSource, setCsrSource] = useState<CsrSource>("imported");
   const [csrManagedKeyRef, setCsrManagedKeyRef] = useState<string | null>(null);
+  const [reuseKeyRef, setReuseKeyRef] = useState<string | null>(null);
+  const [reuseKeyEnabled, setReuseKeyEnabled] = useState(false);
 
   function resetDomainsState() {
     setDomainsInput("test.ezs3.net");
     setKeyOption("rsa-2048");
+    setReuseKeyRef(null);
+    setReuseKeyEnabled(false);
   }
 
   function resetCsrState() {
@@ -45,6 +49,10 @@ export function useIssuePageState() {
     setCsrSource,
     csrManagedKeyRef,
     setCsrManagedKeyRef,
+    reuseKeyRef,
+    setReuseKeyRef,
+    reuseKeyEnabled,
+    setReuseKeyEnabled,
     resetDomainsState,
     resetCsrState,
   };

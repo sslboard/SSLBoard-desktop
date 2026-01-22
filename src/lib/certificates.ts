@@ -4,6 +4,18 @@ export type CertificateSource = "External" | "Managed";
 export type KeyAlgorithm = "rsa" | "ecdsa";
 export type KeyCurve = "p256" | "p384";
 export type CsrSource = "imported" | "generated";
+export type RevocationReason =
+  | "keyCompromise"
+  | "superseded"
+  | "cessationOfOperation"
+  | "unspecified";
+
+export const REVOCATION_REASONS: { value: RevocationReason; label: string }[] = [
+  { value: "keyCompromise", label: "Key compromise" },
+  { value: "superseded", label: "Superseded" },
+  { value: "cessationOfOperation", label: "Cessation of operation" },
+  { value: "unspecified", label: "Unspecified" },
+];
 
 export type CertificateRecord = {
   id: string;
@@ -15,6 +27,7 @@ export type CertificateRecord = {
   not_after: string;
   fingerprint: string;
   source: CertificateSource;
+  issuer_id?: string | null;
   domain_roots: string[];
   tags: string[];
   managed_key_ref?: string | null;
@@ -28,6 +41,9 @@ export type CertificateRecord = {
   csr_key_size?: number | null;
   csr_key_curve?: KeyCurve | null;
   csr_source?: CsrSource | null;
+  renewed_from?: string | null;
+  revoked_at?: string | null;
+  revocation_reason?: RevocationReason | string | null;
 };
 
 export type ExportBundle = "cert" | "chain" | "fullchain";
@@ -58,6 +74,11 @@ export type ExportCertificateResponse =
       existing_files: string[];
     };
 
+export type RevokeCertificateRequest = {
+  certificateId: string;
+  revocationReason?: RevocationReason | null;
+};
+
 export async function listCertificates(): Promise<CertificateRecord[]> {
   return invoke<CertificateRecord[]>("list_certificates");
 }
@@ -79,6 +100,17 @@ export async function exportCertificatePem(
       include_private_key: exportReq.includePrivateKey,
       bundle: exportReq.bundle,
       overwrite: exportReq.overwrite,
+    },
+  });
+}
+
+export async function revokeCertificate(
+  revokeReq: RevokeCertificateRequest,
+): Promise<CertificateRecord> {
+  return invoke<CertificateRecord>("revoke_certificate", {
+    revokeReq: {
+      certificate_id: revokeReq.certificateId,
+      revocation_reason: revokeReq.revocationReason ?? null,
     },
   });
 }

@@ -58,6 +58,8 @@ pub struct CertificateRecord {
     pub fingerprint: String,
     /// Source of this certificate record
     pub source: CertificateSource,
+    /// Issuer configuration identifier (managed certificates only)
+    pub issuer_id: Option<String>,
     /// Root domains extracted from subjects/SANs (e.g., ["example.com"])
     pub domain_roots: Vec<String>,
     /// User-defined tags for organization and filtering
@@ -84,6 +86,12 @@ pub struct CertificateRecord {
     pub csr_key_curve: Option<KeyCurve>,
     /// CSR source when issuance used a CSR
     pub csr_source: Option<CsrSource>,
+    /// Optional reference to the certificate this one renews
+    pub renewed_from: Option<String>,
+    /// Timestamp when certificate was revoked
+    pub revoked_at: Option<DateTime<Utc>>,
+    /// Revocation reason when certificate was revoked
+    pub revocation_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +134,12 @@ pub struct ExportCertificateRequest {
 pub struct ExportedFile {
     pub label: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RevokeCertificateRequest {
+    pub certificate_id: String,
+    pub revocation_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,6 +331,8 @@ pub struct StartIssuanceRequest {
     pub key_algorithm: Option<KeyAlgorithm>,
     pub key_size: Option<u16>,
     pub key_curve: Option<KeyCurve>,
+    pub reuse_key_ref: Option<String>,
+    pub renewing_cert_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -15,16 +15,15 @@
 
 ## Active OpenSpec Changes
 
-- **Certificate Renewal Flow** (`add-certificate-renewal-flow`): Not started - key reuse support, renewal lineage tracking, and UI integration for certificate renewals.
+- **Certificate Renewal Flow** (`add-certificate-renewal-flow`): Complete - renewal actions, Issue page prefill, optional key reuse, and renewal lineage tracking implemented (not yet archived).
+- **Certificate Revocation** (`add-certificate-revocation`): Complete - revocation flow implemented (not yet archived).
+- **ACME Profile Support** (`add-acme-profile-support`): Not started - surface CA profiles, validate selection in Rust core, and persist selected profile metadata.
 - **DNS Provider Integration Tests** (`add-dns-provider-integration-tests`): Partially complete - Cloudflare and DigitalOcean integration tests implemented, Route 53 tests and CI/documentation pending.
-- **macOS Biometric Keychain** (`add-macos-biometric-keychain`): Not started - biometric access control for macOS using Touch ID/Face ID.
-- **Rust Code Quality Refactoring** (`refactor-rust-code-quality`): **Fully Complete** - DNS provider code modularized, error handling improved, logging standardized, dead code removed, and performance/security enhancements implemented.
-- **DNS Provider TXT Upsert Updates** (`update-dns-provider-txt-upsert`): Mostly complete - TXT content normalization and upsert behavior implemented for DigitalOcean/Route 53, validation pending.
 
 ## Current System State
 
 - Secret storage: OS keyring-backed with metadata in `secrets.sqlite`; prefixed refs (`sec_`), secret kind `dns_provider_token` replaces `dns_credential`.
-- Certificate inventory: Functional with metadata listing and demo seeding; real issuance flow implemented with ACME orchestration.
+- Certificate inventory: Functional with metadata listing and demo seeding; renewal actions and lineage tracking now supported.
 - DNS providers: Full CRUD management with test connection flow; provider resolution integrated into Issue flow with manual fallback.
 - Issuance: End-to-end ACME flow with managed keys, DNS-01 challenges, and certificate persistence; staging/production issuer support.
 - UI: Complete shell with routing, all major pages functional (Certificates, Issue, Settings with DNS Providers/Issuers/Secrets).
@@ -39,16 +38,16 @@
 ## Pending/Placeholder Items
 
 - Discover page: Still placeholder content.
-- Certificate renewal: Not yet implemented (key reuse, lineage tracking, UI integration).
 - DNS provider adapters: Currently stubbed - need real Cloudflare/DigitalOcean/Route 53 implementations.
 - Integration tests: Route 53 tests and CI setup pending.
-- macOS biometric features: Not yet implemented.
 - ACME account key validation: May need additional error handling refinements.
 
 ## Next Logical Work
 
 - Complete `add-dns-provider-integration-tests` (Route 53 tests, documentation, CI).
 - Implement real DNS provider adapters (Cloudflare, DigitalOcean, Route 53).
-- Add certificate renewal flow with key reuse and lineage tracking.
+- Archive `add-certificate-renewal-flow` after deployment and spec sync.
+- Archive `add-certificate-revocation` after deployment and spec sync.
+- Plan `add-acme-profile-support` implementation (spec deltas and tasks if missing).
 - Consider macOS biometric keychain enhancement.
 - Flesh out ACME error handling and account key validation.

@@ -95,6 +95,12 @@ export function CertificatesPage() {
     }
   }
 
+  function handleRecordUpdated(updated: CertificateRecord) {
+    setRecords((prev) =>
+      prev.map((record) => (record.id === updated.id ? updated : record)),
+    );
+    setSelected((prev) => (prev?.id === updated.id ? updated : prev));
+  }
 
   return (
     <div className="space-y-6">
@@ -151,6 +157,8 @@ export function CertificatesPage() {
               selected={selected}
               loading={loadingDetail}
               error={detailError}
+              onRecordUpdated={handleRecordUpdated}
+              onSelectCertificate={setSelectedId}
             />
           </div>
         </>

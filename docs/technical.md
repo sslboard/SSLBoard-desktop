@@ -265,7 +265,7 @@ This should be implemented as:
 
 Store non-secret state locally for UX and auditability:
 
-* Certificates inventory (id, SANs, issuer, expiry)
+* Certificates inventory (id, SANs, issuer, expiry, renewal lineage)
 * Distribution targets and last applied status
 * ACME account identifiers (but not private key material)
 * Audit events
@@ -293,6 +293,14 @@ Flow responsibilities:
 * Finalize and fetch certificate
 
 DNS provider drivers live under `issuance/dns/*`.
+
+### Renewals
+
+Renewals reuse the issuance engine with pre-filled metadata:
+
+* Managed certs: allow optional reuse of the existing managed private key.
+* External certs: prefill SANs and let the user select an issuer; always generate a new managed key unless a CSR is provided.
+* Lineage: store a `renewed_from` reference on the new certificate record to allow navigation between versions.
 
 ### Private PKI
 

@@ -22,16 +22,18 @@ use crate::{
     storage::{dns::DnsConfigStore, inventory::InventoryStore, issuer::IssuerConfigStore},
 };
 use tauri::Emitter;
-use log::error;
+use log::{error, warn};
 
 struct PendingIssuance {
     order: Order,
     domains: Vec<String>,
+    issuer_id: String,
     managed_key_ref: String,
     managed_key_pem: String,
     key_algorithm: KeyAlgorithm,
     key_size: Option<u16>,
     key_curve: Option<KeyCurve>,
+    renewing_cert_id: Option<String>,
     /// DNS records that were automatically created and need cleanup after issuance
     dns_records_to_cleanup: Vec<(String, String)>, // (domain, record_name)
 }
@@ -74,6 +76,8 @@ pub fn start_managed_dns01(
     key_algorithm: Option<KeyAlgorithm>,
     key_size: Option<u16>,
     key_curve: Option<KeyCurve>,
+    reuse_key_ref: Option<String>,
+    renewing_cert_id: Option<String>,
     issuer_store: &IssuerConfigStore,
     dns_store: &DnsConfigStore,
     secrets: &SecretManager,
@@ -154,29 +158,52 @@ pub fn start_managed_dns01(
         .first()
         .cloned()
         .ok_or_else(|| anyhow!("primary domain missing"))?;
-    let key_pem_str =
-        acme_workflow::generate_private_key(&key_algorithm, key_size, key_curve.as_ref())?;
-    let key_label = format!(
-        "Managed {} key for {}",
-        format_key_label(&key_algorithm, key_size, key_curve.as_ref()),
-        primary
-    );
-    let managed_key = secrets
-        .create_secret(
-            SecretKind::ManagedPrivateKey,
-            key_label,
-            key_pem_str.clone(),
-        )
-        .map_err(|e| anyhow!(e.to_string()))?;
+    let reuse_key_ref = reuse_key_ref.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    });
+    let (managed_key_ref, key_pem_str) = if let Some(ref key_ref) = reuse_key_ref {
+        let metadata = secrets
+            .get_metadata(key_ref)
+            .map_err(|e| anyhow!(e.to_string()))?
+            .ok_or_else(|| anyhow!("Managed key not found: {}", key_ref))?;
+        if metadata.kind != SecretKind::ManagedPrivateKey {
+            return Err(anyhow!("Key reference is not a managed private key"));
+        }
+        let key_bytes = secrets
+            .resolve_secret(key_ref)
+            .map_err(|e| anyhow!(e.to_string()))?;
+        let key_pem = String::from_utf8(key_bytes)
+            .map_err(|_| anyhow!("Stored managed key is not valid UTF-8"))?;
+        (key_ref.clone(), key_pem)
+    } else {
+        let key_pem =
+            acme_workflow::generate_private_key(&key_algorithm, key_size, key_curve.as_ref())?;
+        let key_label = format!(
+            "Managed {} key for {}",
+            format_key_label(&key_algorithm, key_size, key_curve.as_ref()),
+            primary
+        );
+        let managed_key = secrets
+            .create_secret(
+                SecretKind::ManagedPrivateKey,
+                key_label,
+                key_pem.clone(),
+            )
+            .map_err(|e| anyhow!(e.to_string()))?;
+        (managed_key.id.clone(), key_pem)
+    };
 
     let pending = PendingIssuance {
         order: new_order,
         domains: normalized,
-        managed_key_ref: managed_key.id.clone(),
+        issuer_id,
+        managed_key_ref: managed_key_ref.clone(),
         managed_key_pem: key_pem_str,
         key_algorithm,
         key_size,
         key_curve,
+        renewing_cert_id,
         dns_records_to_cleanup,
     };
 
@@ -210,11 +237,13 @@ pub fn complete_managed_dns01(
     let PendingIssuance {
         mut order,
         domains,
+        issuer_id,
         managed_key_ref,
         managed_key_pem,
         key_algorithm,
         key_size,
         key_curve,
+        renewing_cert_id,
         dns_records_to_cleanup,
     } = pending;
 
@@ -277,15 +306,37 @@ pub fn complete_managed_dns01(
         }
     };
 
+    let renewed_from = if let Some(ref cert_id) = renewing_cert_id {
+        match inventory.get_certificate(cert_id) {
+            Ok(Some(_)) => Some(cert_id.clone()),
+            Ok(None) => {
+                warn!("[issuance] renewal origin {} not found; skipping lineage", cert_id);
+                None
+            }
+            Err(err) => {
+                warn!(
+                    "[issuance] failed to resolve renewal origin {}: {}",
+                    cert_id,
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let record = build_record(BuildRecordParams {
         chain_pem: chain_pem.clone(),
         domains,
+        issuer_id,
         managed_key_ref: Some(managed_key_ref.clone()),
         key_algorithm: Some(key_algorithm),
         key_size,
         key_curve,
         csr_metadata: None,
         csr_source: None,
+        renewed_from,
     })?;
     inventory.insert_certificate(&record)?;
 
@@ -339,6 +390,7 @@ pub fn complete_managed_dns01(
 struct PendingCsrIssuance {
     order: Order,
     identifiers: Vec<String>,
+    issuer_id: String,
     csr_der: Vec<u8>,
     csr_metadata: CsrMetadata,
     csr_source: CsrSource,
@@ -433,6 +485,7 @@ pub fn start_csr_dns01(
     let pending = PendingCsrIssuance {
         order: new_order,
         identifiers: parsed.identifiers.clone(),
+        issuer_id,
         csr_der: parsed.der,
         csr_metadata: parsed.metadata.clone(),
         csr_source,
@@ -475,6 +528,7 @@ pub fn complete_csr_dns01(
     let PendingCsrIssuance {
         mut order,
         identifiers,
+        issuer_id,
         csr_der,
         csr_metadata,
         csr_source,
@@ -541,12 +595,14 @@ pub fn complete_csr_dns01(
     let record = build_record(BuildRecordParams {
         chain_pem: chain_pem.clone(),
         domains: identifiers,
+        issuer_id,
         managed_key_ref: managed_key_ref.clone(),
         key_algorithm: Some(csr_metadata.key_algorithm.clone()),
         key_size: csr_metadata.key_size,
         key_curve: csr_metadata.key_curve.clone(),
         csr_metadata: Some(csr_metadata),
         csr_source: Some(csr_source),
+        renewed_from: None,
     })?;
     inventory.insert_certificate(&record)?;
 
@@ -598,24 +654,28 @@ pub fn complete_csr_dns01(
 struct BuildRecordParams {
     chain_pem: String,
     domains: Vec<String>,
+    issuer_id: String,
     managed_key_ref: Option<String>,
     key_algorithm: Option<KeyAlgorithm>,
     key_size: Option<u16>,
     key_curve: Option<KeyCurve>,
     csr_metadata: Option<CsrMetadata>,
     csr_source: Option<CsrSource>,
+    renewed_from: Option<String>,
 }
 
 fn build_record(params: BuildRecordParams) -> Result<CertificateRecord> {
     let BuildRecordParams {
         chain_pem,
         domains,
+        issuer_id,
         managed_key_ref,
         key_algorithm,
         key_size,
         key_curve,
         csr_metadata,
         csr_source,
+        renewed_from,
     } = params;
     let pem_blocks = pem::parse_many(&chain_pem)
         .map_err(|err| anyhow!("failed to parse certificate chain: {err}"))?;
@@ -656,6 +716,7 @@ fn build_record(params: BuildRecordParams) -> Result<CertificateRecord> {
         not_after,
         fingerprint,
         source: CertificateSource::Managed,
+        issuer_id: Some(issuer_id),
         domain_roots: domains.iter().map(|d| root_from_hostname(d)).collect(),
         tags: vec![],
         chain_pem: Some(chain_pem),
@@ -669,6 +730,9 @@ fn build_record(params: BuildRecordParams) -> Result<CertificateRecord> {
         csr_key_size: csr_metadata.as_ref().and_then(|meta| meta.key_size),
         csr_key_curve: csr_metadata.as_ref().and_then(|meta| meta.key_curve.clone()),
         csr_source,
+        renewed_from,
+        revoked_at: None,
+        revocation_reason: None,
     })
 }
 

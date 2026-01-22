@@ -15,6 +15,8 @@ export function useManagedIssuanceFlow(
   selectedIssuerId: string | null,
   parsedDomains: string[],
   keyOption: IssuanceKeyOption,
+  reuseKeyRef: string | null,
+  renewingCertId: string | null,
 ) {
   const [startResult, setStartResult] = useState<StartIssuanceResponse | null>(null);
   const [loadingStart, setLoadingStart] = useState(false);
@@ -91,6 +93,8 @@ export function useManagedIssuanceFlow(
         domains: parsedDomains,
         issuer_id: selectedIssuerId,
         ...keyParams,
+        reuse_key_ref: reuseKeyRef,
+        renewing_cert_id: renewingCertId,
       });
       if (isStale(token)) {
         return;

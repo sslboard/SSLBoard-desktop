@@ -9,6 +9,7 @@ pub mod inventory;
 pub mod issuance;
 pub mod issuers;
 pub mod preferences;
+mod revocation;
 pub mod secrets;
 
 pub use dns_providers::{
@@ -23,4 +24,5 @@ pub use issuance::{
 };
 pub use issuers::{create_issuer, delete_issuer, list_issuers, select_issuer, update_issuer};
 pub use preferences::{get_preference, set_preference};
+pub use revocation::revoke_certificate;
 pub use secrets::{list_secret_refs, lock_vault};

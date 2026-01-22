@@ -9,10 +9,20 @@ import {
   type IssuerConfig,
   type IssuerEnvironment,
 } from "../../lib/issuers";
+import { listCertificates } from "../../lib/certificates";
 import { normalizeError } from "../../lib/errors";
 import { validateIssuerForm, type IssuerFormState } from "../../lib/issuers/validation";
 import { IssuerList } from "./issuers/IssuerList";
 import { IssuerForm } from "./issuers/IssuerForm";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 
 const ACME_DIRECTORY_URLS: Record<IssuerEnvironment, string> = {
   staging: "https://acme-staging-v02.api.letsencrypt.org/directory",
@@ -33,6 +43,9 @@ export function IssuerManager() {
   });
   const [issuerFormSaving, setIssuerFormSaving] = useState(false);
   const [issuerFormError, setIssuerFormError] = useState<string | null>(null);
+  const [issuerDeleteDialogOpen, setIssuerDeleteDialogOpen] = useState(false);
+  const [issuerToDelete, setIssuerToDelete] = useState<IssuerConfig | null>(null);
+  const [issuerDeleteCount, setIssuerDeleteCount] = useState(0);
 
   useEffect(() => {
     void refreshIssuers();
@@ -140,8 +153,39 @@ export function IssuerManager() {
     setIssuerError(null);
     setIssuerLoading(true);
     try {
-      const deletedId = await deleteIssuer({ issuer_id: issuer.issuer_id });
-      setIssuers((prev) => prev.filter((entry) => entry.issuer_id !== deletedId));
+      const certificates = await listCertificates();
+      const issuedCount = certificates.filter(
+        (cert) =>
+          cert.source === "Managed" && cert.issuer_id === issuer.issuer_id,
+      ).length;
+      if (issuedCount > 0) {
+        setIssuerDeleteCount(issuedCount);
+        setIssuerToDelete(issuer);
+        setIssuerDeleteDialogOpen(true);
+        return;
+      }
+      await performIssuerDelete(issuer);
+    } catch (err) {
+      setIssuerError(normalizeError(err));
+    } finally {
+      setIssuerLoading(false);
+    }
+  }
+
+  async function performIssuerDelete(issuer: IssuerConfig) {
+    const deletedId = await deleteIssuer({ issuer_id: issuer.issuer_id });
+    setIssuers((prev) => prev.filter((entry) => entry.issuer_id !== deletedId));
+  }
+
+  async function confirmIssuerDelete() {
+    if (!issuerToDelete || issuerLoading) return;
+    setIssuerError(null);
+    setIssuerLoading(true);
+    try {
+      await performIssuerDelete(issuerToDelete);
+      setIssuerDeleteDialogOpen(false);
+      setIssuerToDelete(null);
+      setIssuerDeleteCount(0);
     } catch (err) {
       setIssuerError(normalizeError(err));
     } finally {
@@ -205,6 +249,33 @@ export function IssuerManager() {
           />
         </div>
       </CardContent>
+      <Dialog open={issuerDeleteDialogOpen} onOpenChange={setIssuerDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete issuer?</DialogTitle>
+            <DialogDescription>
+              This issuer has issued {issuerDeleteCount} managed certificate
+              {issuerDeleteCount === 1 ? "" : "s"}. You can still delete it, but
+              revocation and renewals may be impacted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-3 sm:gap-2">
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" disabled={issuerLoading}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmIssuerDelete}
+              disabled={issuerLoading}
+            >
+              Delete issuer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

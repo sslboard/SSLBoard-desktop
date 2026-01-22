@@ -57,6 +57,7 @@ fn create_tables(conn: &Connection) -> Result<()> {
             not_after TEXT NOT NULL,
             fingerprint TEXT NOT NULL,
             source TEXT NOT NULL,
+            issuer_id TEXT,
             domain_roots TEXT NOT NULL,
             tags TEXT NOT NULL,
             managed_key_ref TEXT,
@@ -69,7 +70,10 @@ fn create_tables(conn: &Connection) -> Result<()> {
             csr_key_algorithm TEXT,
             csr_key_size INTEGER,
             csr_key_curve TEXT,
-            csr_source TEXT
+            csr_source TEXT,
+            renewed_from TEXT,
+            revoked_at TEXT,
+            revocation_reason TEXT
         );
 
         CREATE TABLE IF NOT EXISTS preferences (
@@ -96,6 +100,7 @@ fn migrate_tables(conn: &Connection) -> Result<()> {
         ("params_json", "ALTER TABLE issuer_configs ADD COLUMN params_json TEXT NOT NULL DEFAULT '{}'"),
     ])?;
     ensure_columns(conn, "certificate_records", &[
+        ("issuer_id", "ALTER TABLE certificate_records ADD COLUMN issuer_id TEXT"),
         ("managed_key_ref", "ALTER TABLE certificate_records ADD COLUMN managed_key_ref TEXT"),
         ("chain_pem", "ALTER TABLE certificate_records ADD COLUMN chain_pem TEXT"),
         ("key_algorithm", "ALTER TABLE certificate_records ADD COLUMN key_algorithm TEXT"),
@@ -107,6 +112,9 @@ fn migrate_tables(conn: &Connection) -> Result<()> {
         ("csr_key_size", "ALTER TABLE certificate_records ADD COLUMN csr_key_size INTEGER"),
         ("csr_key_curve", "ALTER TABLE certificate_records ADD COLUMN csr_key_curve TEXT"),
         ("csr_source", "ALTER TABLE certificate_records ADD COLUMN csr_source TEXT"),
+        ("renewed_from", "ALTER TABLE certificate_records ADD COLUMN renewed_from TEXT"),
+        ("revoked_at", "ALTER TABLE certificate_records ADD COLUMN revoked_at TEXT"),
+        ("revocation_reason", "ALTER TABLE certificate_records ADD COLUMN revocation_reason TEXT"),
     ])?;
     ensure_columns(conn, "secret_metadata", &[(
         "ciphertext",

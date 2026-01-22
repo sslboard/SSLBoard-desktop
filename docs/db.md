@@ -1,30 +1,27 @@
 # Database Architecture
 
-SSLBoard uses four separate SQLite databases to organize different types of data with clear separation of concerns. This document describes each database, its tables, schemas, and relationships.
+SSLBoard uses a unified SQLite database (`sslboard.sqlite`) to store all app data. This document describes the tables, schemas, and relationships.
 
 ## Overview
 
-The application stores data in four SQLite databases located in the app data directory:
+The application stores data in a single SQLite database located in the app data directory:
 
 - **macOS**: `~/Library/Application Support/com.sslboard.desktop/`
 - **Windows**: `%APPDATA%\com.sslboard.desktop\`
 - **Linux**: `~/.local/share/com.sslboard.desktop/`
 
-Databases:
-- `inventory.sqlite` (certificate inventory metadata)
-- `issuance.sqlite` (issuers and DNS challenge settings)
-- `preferences.sqlite` (user UI preferences)
-- `secrets.sqlite` (secret metadata and ciphertext)
+Database:
+- `sslboard.sqlite` (unified inventory, issuance, preferences, and secrets metadata)
 
-## Database: `inventory.sqlite`
+Legacy databases (`inventory.sqlite`, `issuance.sqlite`, `preferences.sqlite`, `secrets.sqlite`) are imported on startup when present and then archived with a `.bak` suffix.
+
+## Table: `certificate_records`
 
 **Purpose**: Stores certificate inventory and metadata for issued/managed certificates.
 
-**Location**: `{app_data_dir}/inventory.sqlite`
+**Database**: `{app_data_dir}/sslboard.sqlite`
 
-### Table: `certificate_records`
-
-Stores information about SSL/TLS certificates managed by the application.
+Stores information about SSL/TLS certificates managed or discovered by the application.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -36,11 +33,24 @@ Stores information about SSL/TLS certificates managed by the application.
 | `not_before` | TEXT | NOT NULL | Certificate validity start (ISO 8601 datetime) |
 | `not_after` | TEXT | NOT NULL | Certificate validity end (ISO 8601 datetime) |
 | `fingerprint` | TEXT | NOT NULL | Certificate fingerprint/hash |
-| `source` | TEXT | NOT NULL | How the certificate was obtained (e.g., "acme", "manual") |
+| `source` | TEXT | NOT NULL | How the certificate was obtained ("Managed" or "External") |
+| `issuer_id` | TEXT | NULL | Issuer configuration id (managed certificates) |
 | `domain_roots` | TEXT | NOT NULL | Root domains covered by this certificate (JSON array) |
 | `tags` | TEXT | NOT NULL | User-defined tags for organization (JSON array) |
-| `managed_key_ref` | TEXT | NULL | Reference to the private key secret (points to `secrets.sqlite`) |
+| `managed_key_ref` | TEXT | NULL | Reference to the private key secret (points to `secret_metadata`) |
 | `chain_pem` | TEXT | NULL | Full certificate chain in PEM format |
+| `key_algorithm` | TEXT | NULL | Key algorithm for managed issuance (rsa/ecdsa) |
+| `key_size` | INTEGER | NULL | RSA key size |
+| `key_curve` | TEXT | NULL | ECDSA curve (p256/p384) |
+| `csr_subject` | TEXT | NULL | CSR subject when issuance used a CSR |
+| `csr_sans` | TEXT | NULL | CSR SANs (JSON array) |
+| `csr_key_algorithm` | TEXT | NULL | CSR key algorithm |
+| `csr_key_size` | INTEGER | NULL | CSR RSA key size |
+| `csr_key_curve` | TEXT | NULL | CSR ECDSA curve |
+| `csr_source` | TEXT | NULL | CSR source (imported/generated) |
+| `renewed_from` | TEXT | NULL | Certificate id this certificate renews |
+| `revoked_at` | TEXT | NULL | Revocation timestamp (ISO 8601 datetime) |
+| `revocation_reason` | TEXT | NULL | Revocation reason |
 
 **Usage**:
 - Certificate inventory management
@@ -48,15 +58,11 @@ Stores information about SSL/TLS certificates managed by the application.
 - Domain coverage analysis
 - Backup and export operations
 
-## Database: `issuance.sqlite`
+## Table: `issuer_configs`
 
 **Purpose**: Stores ACME (Let's Encrypt) configuration and DNS challenge settings.
 
-**Location**: `{app_data_dir}/issuance.sqlite`
-
-This database contains two tables for ACME certificate issuance configuration.
-
-### Table: `issuer_configs`
+**Database**: `{app_data_dir}/sslboard.sqlite`
 
 Stores ACME account configurations for different Certificate Authorities.
 
@@ -76,7 +82,22 @@ Stores ACME account configurations for different Certificate Authorities.
 | `created_at` | TEXT | NOT NULL | When the issuer was configured (ISO 8601 datetime) |
 | `updated_at` | TEXT | NOT NULL | Last update timestamp (ISO 8601 datetime) |
 
-### Table: `dns_zone_mappings`
+### Table: `dns_providers`
+
+Stores DNS provider configurations for automated DNS-01 challenges.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | TEXT | PRIMARY KEY | Unique identifier for the provider |
+| `provider_type` | TEXT | NOT NULL | Provider type (e.g., "cloudflare") |
+| `label` | TEXT | NOT NULL | Human-readable label |
+| `domain_suffixes` | TEXT | NOT NULL | JSON array of domain suffixes |
+| `secret_ref` | TEXT | NULL | Reference to provider credentials (points to `secret_metadata`) |
+| `config_json` | TEXT | NULL | Provider-specific configuration (JSON) |
+| `created_at` | TEXT | NOT NULL | Created timestamp |
+| `updated_at` | TEXT | NOT NULL | Last update timestamp |
+
+### Table: `dns_zone_mappings` (legacy)
 
 Maps hostname patterns to DNS zones and their authentication credentials for DNS-01 challenges.
 
@@ -95,13 +116,11 @@ Maps hostname patterns to DNS zones and their authentication credentials for DNS
 - Certificate authority selection
 - Automated certificate renewal
 
-## Database: `preferences.sqlite`
+## Table: `preferences`
 
 **Purpose**: Stores user preferences that should persist across sessions (UI settings, last-used destinations).
 
-**Location**: `{app_data_dir}/preferences.sqlite`
-
-### Table: `preferences`
+**Database**: `{app_data_dir}/sslboard.sqlite`
 
 Key-value store for non-secret user preferences.
 
@@ -115,13 +134,11 @@ Key-value store for non-secret user preferences.
 - Persisting export destination
 - Future UI defaults and preferences
 
-## Database: `secrets.sqlite`
+## Table: `secret_metadata`
 
 **Purpose**: Stores metadata and encrypted secret ciphertext. The master encryption key lives in the OS keyring; the database holds only AES-256-GCM ciphertext.
 
-**Location**: `{app_data_dir}/secrets.sqlite`
-
-### Table: `secret_metadata`
+**Database**: `{app_data_dir}/sslboard.sqlite`
 
 Stores non-sensitive metadata about secrets plus encrypted ciphertext.
 
@@ -134,9 +151,13 @@ Stores non-sensitive metadata about secrets plus encrypted ciphertext.
 | `ciphertext` | BLOB | NULL | AES-256-GCM payload stored as `nonce || ciphertext || tag` |
 
 **Secret Kinds**:
-- `dns_credential` - DNS provider API credentials
+- `dns_provider_token` - DNS provider API tokens
+- `dns_provider_access_key` - DNS provider access key (when providers require key pairs)
+- `dns_provider_secret_key` - DNS provider secret key (when providers require key pairs)
 - `acme_account_key` - ACME account private keys
 - `managed_private_key` - Private keys for managed certificates
+
+Legacy `dns_credential` values are migrated to `dns_provider_token`.
 
 **Usage**:
 - Secret inventory management
@@ -152,18 +173,16 @@ The databases are loosely coupled through secret references:
 ```
 certificate_records.managed_key_ref → secret_metadata.id (managed_private_key)
 issuer_configs.account_key_ref → secret_metadata.id (acme_account_key)
-dns_zone_mappings.secret_ref → secret_metadata.id (dns_credential)
+dns_providers.secret_ref → secret_metadata.id (dns_provider_*)
 ```
 
 ## Architecture Decisions
 
-### Why Separate Databases?
+### Why a Unified Database?
 
-1. **Domain Separation**: Each database serves a distinct purpose
-2. **Performance Isolation**: Heavy certificate queries don't impact secret lookups
-3. **Independent Evolution**: Each can have separate schema migrations
-4. **Selective Operations**: Backup/restore specific data types independently
-5. **Size Management**: Certificate inventory can grow large with PEM data
+1. **Simpler operations**: One file to manage and backup
+2. **Consistent migrations**: Single migration path for all tables
+3. **Legacy import support**: Existing split DBs can be merged at startup
 
 ### Thread Safety
 
