@@ -17,7 +17,7 @@ SSLBoard Desktop is an open-source tool designed for developers and DevOps teams
 - **Public Certificate Issuance**: Issue SSL/TLS certificates via ACME DNS-01 challenges with Let's Encrypt (staging and production). Supports both managed-key issuance and CSR-based issuance.
 - **Key Generation**: Generate private keys locally with RSA (2048/3072/4096) and ECDSA (P-256/P-384) algorithms.
 - **CSR Support**: Import existing CSRs or generate new CSRs locally for endpoint-owned key workflows.
-- **DNS Provider Management**: Configure DNS providers (Cloudflare, DigitalOcean, AWS Route 53) for automated DNS-01 challenges. DNS provider adapters are currently stubbed—manual DNS record setup is supported.
+- **DNS Provider Management**: Configure DNS providers (Cloudflare, DigitalOcean) for automated DNS-01 challenges, with manual DNS fallback when needed.
 - **Secure Secret Storage**: Secrets (DNS API tokens, ACME account keys, private keys) are stored locally using OS keychains (macOS Keychain, Windows Credential Vault, Linux Secret Service) and never transmitted.
 - **Certificate Export**: Export certificates in standard PEM formats (certificate, chain, fullchain) with optional private key export (guarded by user confirmation).
 - **Certificate Inventory**: Local certificate inventory with metadata tracking, expiration dates, subject information, and source tracking.
@@ -28,10 +28,10 @@ SSLBoard Desktop is an open-source tool designed for developers and DevOps teams
 #### 🚧 Planned (Not Yet Implemented)
 
 - **Private PKI**: Issue private certificates using a constrained PKI system (root or root+intermediate CA, server/client certs). *Coming soon*
-- **Certificate Renewal**: Automatic renewal scheduling and manual renewal triggers with key reuse support. *Coming soon*
+- **Certificate Renewal Scheduling**: Automatic renewal scheduling. *Coming soon*
 - **Certificate Revocation**: Revoke ACME-issued certificates using private key or account key authentication. *Coming soon*
 - **Distribution Options**: Kubernetes Secret integration, GitOps support, and encrypted relay capabilities for automated certificate distribution.
-- **Certificate Discovery**: Discover certificates across infrastructure and consolidate inventory from multiple sources.
+- **Certificate Discovery (CT Only)**: Certificate Transparency discovery and inventory import.
 - **HTTP-01 Challenges**: Alternative ACME challenge method for certificate issuance.
 - **macOS Biometric Access**: Touch ID/Face ID authentication for secret access on macOS.
 
@@ -143,15 +143,17 @@ Note: While the core is open-source, future paid features (e.g., SSLBoard Cloud 
 4. ✅ Certificate inventory with metadata tracking
 5. ✅ CSR-based issuance support
 6. ✅ Multiple key algorithm support (RSA/ECDSA)
+7. ✅ Certificate renewal (manual + scheduled)
+8. ✅ DNS provider adapters for Cloudflare and DigitalOcean
 
 ### 🚧 In Progress / Planned
 
-- **Certificate Renewal**: Automatic renewal scheduling and key reuse
+- **Certificate Renewal Scheduling**: Automatic renewal scheduling
 - **Certificate Revocation**: ACME certificate revocation support
 - **Private PKI**: Root CA and intermediate CA management for internal certificates
 - **Kubernetes Secret Distribution**: Direct integration with Kubernetes clusters
-- **DNS Provider Adapters**: Full implementation of Cloudflare, DigitalOcean, and Route 53 adapters
-- **Certificate Discovery**: Infrastructure scanning and Certificate Transparency integration
+- **DNS Provider Adapters**: Route 53 adapter
+- **Certificate Discovery (CT Only)**: Certificate Transparency integration
 - **GitOps Distribution**: Integration with SealedSecrets, SOPS, and GitOps workflows
 
 For detailed feature proposals and upcoming work, check `openspec/changes/`.

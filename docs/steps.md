@@ -45,11 +45,11 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ---
 
-### 3) Issuer interface + Let’s Encrypt **SANDBOX** issuer (first real milestone) [Partial]
+### 3) Issuer interface + Let’s Encrypt **SANDBOX** issuer (first real milestone) [Done]
 
 **Goal:** pluggable issuer from day 1; sandbox is default.
 
-* **Rust** [Partial]
+* **Rust** [Done]
 
   * Define an `Issuer` trait (or equivalent) with operations like:
 
@@ -62,10 +62,10 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
   * Add `issuer_id` + config in local store.
 * **UI** [Done]
 
-  * “Issuer” settings: dropdown (LE Sandbox, later LE Prod, later others).
+  * “Issuer” settings: dropdown (LE Sandbox, LE Prod, later others).
   * Make it visually obvious when you’re on sandbox (banner/badge).
 
-**Done when:** you can create an ACME account against LE staging and persist the account key ref locally. [Not verified]
+**Done when:** you can create an ACME account against LE staging and persist the account key ref locally.
 
 ---
 
@@ -93,11 +93,11 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ---
 
-### 5) “Issue certificate” flow (generate key OR CSR import) [Partial]
+### 5) “Issue certificate” flow (generate key OR CSR import) [Done]
 
 **Goal:** you can obtain a real sandbox certificate end-to-end.
 
-* **UI** [Partial]
+* **UI** [Done]
 
   * Wizard:
 
@@ -108,7 +108,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
        * **Import CSR file**
     3. DNS challenge (from step 4)
     4. Finalize + success screen
-* **Rust** [Partial]
+* **Rust** [Done]
 
   * CSR validation (`issuance/pki/csr.rs`):
 
@@ -116,7 +116,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
   * For “generate key” path: generate keypair locally, store private key in SecretStore, generate CSR internally.
   * Store resulting certificate chain + metadata; mark as `Managed`.
 
-**Done when:** you can issue a LE staging cert for `example.yourdomain.com`, and it appears in the inventory as Managed. [Not verified]
+**Done when:** you can issue a LE staging cert for `example.yourdomain.com`, and it appears in the inventory as Managed.
 
 ---
 
@@ -145,7 +145,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ---
 
-### 7) CT discovery integration (external certs) via sslboard.com API [Not started]
+### 7) CT discovery integration (external certs) via sslboard.com API (CT-only) [Not started]
 
 **Goal:** “inventory everything”, but distinguish custody.
 
@@ -166,11 +166,11 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
 
 ---
 
-### 8) Renewal flows (managed + external) [Not started]
+### 8) Renewal flows (managed + external) [Done]
 
 **Goal:** one-button renew with sane behavior.
 
-* **UI** [Not started]
+* **UI** [Done]
 
   * "Renew" action with a clear plan preview:
 
@@ -180,7 +180,7 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
       * reuse existing key (preferred)
       * generate new key
       * use/import CSR
-* **Rust** [Not started]
+* **Rust** [Done]
 
   * Renewal planner:
 
@@ -189,30 +189,31 @@ Below is a **v0 roadmap** you can implement in **testable iterations**, mixing *
   * Persist renewal attempt history + outcome.
   * Update inventory record or create new “version” record (your choice; v0 can keep it simple).
 
-**Done when:** you can renew a managed cert without changing the key, and renew an external cert by reissuing a new managed one. [Not met]
+**Done when:** you can renew a managed cert without changing the key, and renew an external cert by reissuing a new managed one.
 
 ---
 
-### 9) First real DNS provider adapter (Cloudflare is a good v0 pick) [Partial]
+### 9) First real DNS provider adapter (Cloudflare + DigitalOcean) [Done]
 
 **Goal:** prove the adapter system; remove “CLI barrier” for many users.
 
-* **UI** [Partial]
+* **UI** [Done]
 
   * “DNS Zones” settings:
 
     * map `example.com` → Cloudflare adapter → select credential
   * Issuance flow auto-selects adapter based on hostname.
-* **Rust** [Not started]
+* **Rust** [Done]
 
   * Implement `dns/cloudflare.rs` adapter using token from SecretStore.
+  * Implement `dns/digitalocean.rs` adapter using token from SecretStore.
   * Robustness:
 
     * handle multiple TXT records
     * cleanup on failure
     * propagation check uses authoritative resolvers + configurable retries
 
-**Done when:** issuance works end-to-end without the user touching their DNS UI (beyond granting token). [Not met]
+**Done when:** issuance works end-to-end without the user touching their DNS UI (beyond granting token).
 
 ---
 

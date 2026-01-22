@@ -78,7 +78,6 @@ Stores ACME account configurations for different Certificate Authorities.
 | `account_key_ref` | TEXT | NULL | Reference to ACME account private key (points to `secrets.sqlite`) |
 | `tos_agreed` | INTEGER | NOT NULL DEFAULT 0 | Whether Terms of Service have been agreed to (0/1) |
 | `is_selected` | INTEGER | NOT NULL DEFAULT 0 | Whether this is the currently selected issuer (0/1) |
-| `disabled` | INTEGER | NOT NULL DEFAULT 0 | Whether this issuer configuration is disabled (0/1) |
 | `created_at` | TEXT | NOT NULL | When the issuer was configured (ISO 8601 datetime) |
 | `updated_at` | TEXT | NOT NULL | Last update timestamp (ISO 8601 datetime) |
 
