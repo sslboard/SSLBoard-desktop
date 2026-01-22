@@ -42,6 +42,49 @@ jobs:
           releaseDraft: false
           prerelease: false
       
+      - name: Upload renamed Windows installer
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          # Extract version from tag (remove 'v' prefix if present)
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          
+          # Find Windows installer files
+          $msiFile = Get-ChildItem -Path "src-tauri/target/release/bundle" -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $exeFile = Get-ChildItem -Path "src-tauri/target/release/bundle" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          
+          # Determine which installer to use (prefer MSI, fallback to EXE)
+          if ($msiFile) {
+            $installerFile = $msiFile
+            $extension = "msi"
+          } elseif ($exeFile) {
+            $installerFile = $exeFile
+            $extension = "exe"
+          } else {
+            Write-Host "❌ ERROR: No Windows installer found (.msi or .exe)"
+            exit 1
+          }
+          
+          # Create new filename
+          $newFileName = "SSLBoard_${version}_Windows_x64.${extension}"
+          $newFilePath = Join-Path $installerFile.DirectoryName $newFileName
+          
+          # Copy and rename the file
+          Copy-Item -Path $installerFile.FullName -Destination $newFilePath
+          
+          Write-Host "Renamed installer: $($installerFile.Name) -> $newFileName"
+          
+          # Delete auto-uploaded files from release
+          Write-Host "Deleting auto-uploaded files from release..."
+          gh release delete-asset "${{ github.ref_name }}" "$($installerFile.Name)" --yes 2>&1 | Out-Null
+          
+          # Upload renamed file
+          Write-Host "Uploading renamed installer: $newFileName"
+          gh release upload "${{ github.ref_name }}" "$newFilePath" --clobber
+          Write-Host "✅ Windows installer uploaded as $newFileName"
+      
       - name: Debug build outputs
         if: failure()
         shell: pwsh
@@ -273,6 +316,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Extract version from tag (remove 'v' prefix if present)
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          
           # Find the notarized DMG (search in multiple possible locations)
           DMG_FILE=$(find src-tauri/target/release/bundle -name "*.dmg" -type f | head -1)
           
@@ -286,9 +333,30 @@ jobs:
             exit 1
           fi
           
-          echo "Uploading notarized DMG: $DMG_FILE"
-          gh release upload "${{ github.ref_name }}" "$DMG_FILE" --clobber
-          echo "✅ DMG uploaded to release!"
+          # Get the directory and original filename
+          DMG_DIR=$(dirname "$DMG_FILE")
+          DMG_BASENAME=$(basename "$DMG_FILE")
+          
+          # Create new filename
+          NEW_DMG_NAME="SSLBoard_${VERSION}_MacOS_AppleSilicon.dmg"
+          NEW_DMG_PATH="${DMG_DIR}/${NEW_DMG_NAME}"
+          
+          # Copy and rename the DMG
+          cp "$DMG_FILE" "$NEW_DMG_PATH"
+          echo "Renamed DMG: $DMG_BASENAME -> $NEW_DMG_NAME"
+          
+          # Delete auto-uploaded files from release (DMG and tar.gz if present)
+          echo "Deleting auto-uploaded files from release..."
+          gh release delete-asset "${{ github.ref_name }}" "$DMG_BASENAME" --yes 2>&1 || true
+          
+          # Delete tar.gz if it was uploaded
+          TAR_GZ_NAME="${DMG_BASENAME%.dmg}.tar.gz"
+          gh release delete-asset "${{ github.ref_name }}" "$TAR_GZ_NAME" --yes 2>&1 || true
+          
+          # Upload renamed DMG
+          echo "Uploading renamed DMG: $NEW_DMG_NAME"
+          gh release upload "${{ github.ref_name }}" "$NEW_DMG_PATH" --clobber
+          echo "✅ DMG uploaded to release as $NEW_DMG_NAME!"
 
       - name: Cleanup signing keychain
         if: always()
