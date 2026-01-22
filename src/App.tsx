@@ -6,7 +6,7 @@ import {
   Globe,
 } from "lucide-react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { AppShell } from "./components/layout/app-shell";
+import { AppShell, type NavItem } from "./components/layout/app-shell";
 import { ThemeProvider } from "./components/theme-provider";
 import { Toaster } from "./components/ui/sonner";
 import { CertificatesPage } from "./pages/Certificates";
@@ -14,7 +14,6 @@ import { IssuePage } from "./pages/Issue";
 import { DiscoverPage } from "./pages/Discover";
 import { SettingsPage } from "./pages/Settings";
 import { DnsProvidersPage } from "./pages/settings/DnsProviders";
-import type { NavItem } from "./components/layout/sidebar";
 
 const navItems: NavItem[] = [
   {

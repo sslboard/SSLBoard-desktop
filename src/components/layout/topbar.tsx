@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { Logo } from "../logo";
 import { buttonVariants } from "../ui/button";
-import type { NavItem } from "./sidebar";
+import type { NavItem } from "./app-shell";
 
 type TopbarProps = {
   navItems: NavItem[];

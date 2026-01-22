@@ -1,6 +1,12 @@
-import { type NavItem } from "./sidebar";
 import { Topbar } from "./topbar";
 import { useVaultControls } from "../../hooks/useVaultControls";
+
+export type NavItem = {
+  label: string;
+  description?: string;
+  to: string;
+  icon: React.ReactNode;
+};
 
 type AppShellProps = {
   navItems: NavItem[];

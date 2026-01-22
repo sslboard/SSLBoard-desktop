@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -8,32 +8,21 @@ import { useIssuerOptions } from "../hooks/useIssuerOptions";
 import { useProviderPreview } from "../hooks/useProviderPreview";
 import { useManagedIssuanceFlow } from "../hooks/useManagedIssuanceFlow";
 import { useCsrIssuanceFlow } from "../hooks/useCsrIssuanceFlow";
+import { useIssuePageState } from "../hooks/useIssuePageState";
 import { IssuanceConfigCard } from "../components/issue/IssuanceConfigCard";
 import { DomainsInputCard } from "../components/issue/DomainsInputCard";
 import { CsrIssuanceCard } from "../components/issue/CsrIssuanceCard";
 import { CsrGenerationCard } from "../components/issue/CsrGenerationCard";
-import type { IssuanceMode } from "../components/issue/IssuanceModeCard";
 import { IssuanceResultBanner } from "../components/issue/IssuanceResultBanner";
 import { IssuanceFlowContainer } from "../components/issue/IssuanceFlowContainer";
 import {
   inspectCsr,
   type GenerateCsrResponse,
-  type CsrSource,
-  type CsrValidationResult,
-  type IssuanceKeyOption,
 } from "../lib/issuance";
 import { normalizeError } from "../lib/errors";
 
 export function IssuePage() {
-  const [issuanceMode, setIssuanceMode] = useState<IssuanceMode>("dns");
-  const [domainsInput, setDomainsInput] = useState("test.ezs3.net");
-  const [keyOption, setKeyOption] = useState<IssuanceKeyOption>("rsa-2048");
-  const [csrPath, setCsrPath] = useState<string | null>(null);
-  const [csrResult, setCsrResult] = useState<CsrValidationResult | null>(null);
-  const [csrLoading, setCsrLoading] = useState(false);
-  const [csrError, setCsrError] = useState<string | null>(null);
-  const [csrSource, setCsrSource] = useState<CsrSource>("imported");
-  const [csrManagedKeyRef, setCsrManagedKeyRef] = useState<string | null>(null);
+  const pageState = useIssuePageState();
   const {
     issuers,
     issuerLoading,
@@ -42,11 +31,13 @@ export function IssuePage() {
     selectIssuerById,
   } = useIssuerOptions();
 
-  const normalizedInput = domainsInput.normalize("NFC");
-  const parsedDomains = normalizedInput
-    .split(/[\s,]+/)
-    .map((d) => d.normalize("NFC").trim().toLowerCase())
-    .filter(Boolean);
+  const parsedDomains = useMemo(() => {
+    const normalizedInput = pageState.domainsInput.normalize("NFC");
+    return normalizedInput
+      .split(/[\s,]+/)
+      .map((d: string) => d.normalize("NFC").trim().toLowerCase())
+      .filter(Boolean);
+  }, [pageState.domainsInput]);
 
   const { providerPreview, providerLoading, providerError } =
     useProviderPreview(parsedDomains);
@@ -68,7 +59,7 @@ export function IssuePage() {
     continueIssuance,
     retryFinalization,
     reset,
-  } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, keyOption);
+  } = useManagedIssuanceFlow(selectedIssuer?.issuer_id ?? null, parsedDomains, pageState.keyOption);
 
   const {
     startResult: csrStartResult,
@@ -89,9 +80,9 @@ export function IssuePage() {
     reset: resetCsrFlow,
   } = useCsrIssuanceFlow(
     selectedIssuer?.issuer_id ?? null,
-    csrPath,
-    csrSource,
-    csrManagedKeyRef,
+    pageState.csrPath,
+    pageState.csrSource,
+    pageState.csrManagedKeyRef,
   );
 
   const issuerLabel = selectedIssuer?.label ?? "No issuer selected";
@@ -108,33 +99,111 @@ export function IssuePage() {
   // Determine if each flow is active (only one can be active at a time)
   const managedFlowActive = loadingStart || startResult !== null || finalizing;
   const csrFlowActive = csrLoadingStart || csrStartResult !== null || csrFinalizing;
-  
+
   // Disable one flow when the other is active
   const managedFlowDisabled = csrFlowActive;
   const csrFlowDisabled = managedFlowActive;
+
+  const dnsFlowProps = {
+    inputComponent: (
+      <>
+        <DomainsInputCard
+          domainsInput={pageState.domainsInput}
+          parsedDomains={parsedDomains}
+          issuerLabel={issuerLabel}
+          issuerEnvironment={issuerEnvironment}
+          issuerReady={issuerReady}
+          loadingStart={loadingStart}
+          hasStartResult={Boolean(startResult)}
+          providerPreview={providerPreview}
+          providerLoading={providerLoading}
+          providerError={providerError}
+          keyOption={pageState.keyOption}
+          onDomainsChange={pageState.setDomainsInput}
+          onKeyOptionChange={pageState.setKeyOption}
+          onStart={handleStart}
+          onReset={handleReset}
+          disabled={managedFlowDisabled}
+        />
+        {error && (
+          <IssuanceResultBanner error={error} successMessage={null} />
+        )}
+      </>
+    ),
+    loadingStart,
+    startResult,
+    hasManual,
+    hasManaged,
+    dnsModeLabel,
+    manualRecords,
+    finalizing,
+    awaitingManual,
+    finalizeFailed,
+    certificate,
+    error,
+    eventState,
+    onContinue: continueIssuance,
+    onRetryFinalize: retryFinalization,
+    onIssueAnother: handleIssueAnother,
+  };
+
+  const csrFlowProps = {
+    inputComponent: (
+      <>
+        <CsrIssuanceCard
+          issuerLabel={issuerLabel}
+          issuerEnvironment={issuerEnvironment}
+          issuerReady={issuerReady}
+          loadingStart={csrLoadingStart}
+          hasStartResult={Boolean(csrStartResult)}
+          csrPath={pageState.csrPath}
+          csrResult={pageState.csrResult}
+          csrLoading={pageState.csrLoading}
+          csrError={pageState.csrError}
+          onSelectCsr={handleSelectCsr}
+          onClearCsr={handleClearCsr}
+          onStart={handleCsrStart}
+          onReset={resetCsrFlow}
+          disabled={csrFlowDisabled}
+        />
+        {csrFlowError && (
+          <IssuanceResultBanner error={csrFlowError} successMessage={null} />
+        )}
+      </>
+    ),
+    loadingStart: csrLoadingStart,
+    startResult: csrStartResult,
+    hasManual: csrHasManual,
+    hasManaged: csrHasManaged,
+    dnsModeLabel: csrDnsModeLabel,
+    manualRecords: csrManualRecords,
+    finalizing: csrFinalizing,
+    awaitingManual: csrAwaitingManual,
+    finalizeFailed: csrFinalizeFailed,
+    certificate: csrCertificate,
+    error: csrFlowError,
+    eventState: csrEventState,
+    onContinue: continueCsrIssuance,
+    onRetryFinalize: retryCsrFinalization,
+    onIssueAnother: handleCsrIssueAnother,
+  };
 
   function handleSelectIssuer(issuerId: string) {
     selectIssuerById(issuerId);
   }
 
   function handleReset() {
-    setDomainsInput("test.ezs3.net");
-    setKeyOption("rsa-2048");
+    pageState.resetDomainsState();
     reset();
   }
 
   function handleIssueAnother() {
-    setDomainsInput("test.ezs3.net");
-    setKeyOption("rsa-2048");
+    pageState.resetDomainsState();
     reset();
   }
 
   function handleCsrIssueAnother() {
-    setCsrPath(null);
-    setCsrResult(null);
-    setCsrError(null);
-    setCsrManagedKeyRef(null);
-    setCsrSource("imported");
+    pageState.resetCsrState();
     resetCsrFlow();
   }
 
@@ -146,36 +215,32 @@ export function IssuePage() {
     if (typeof selection !== "string") {
       return;
     }
-    setCsrLoading(true);
-    setCsrError(null);
-    setCsrPath(selection);
-    setCsrSource("imported");
-    setCsrManagedKeyRef(null);
+    pageState.setCsrLoading(true);
+    pageState.setCsrError(null);
+    pageState.setCsrPath(selection);
+    pageState.setCsrSource("imported");
+    pageState.setCsrManagedKeyRef(null);
     try {
       const result = await inspectCsr({ csr_path: selection });
-      setCsrResult(result);
+      pageState.setCsrResult(result);
     } catch (err) {
-      setCsrResult(null);
-      setCsrError(normalizeError(err));
+      pageState.setCsrResult(null);
+      pageState.setCsrError(normalizeError(err));
     } finally {
-      setCsrLoading(false);
+      pageState.setCsrLoading(false);
     }
   }
 
   function handleClearCsr() {
-    setCsrPath(null);
-    setCsrResult(null);
-    setCsrError(null);
-    setCsrManagedKeyRef(null);
-    setCsrSource("imported");
+    pageState.resetCsrState();
     resetCsrFlow();
   }
 
   function handleGeneratedCsr(result: GenerateCsrResponse) {
-    setCsrPath(result.csr_path);
-    setCsrManagedKeyRef(result.managed_key_ref);
-    setCsrResult(result.result);
-    setCsrSource("generated");
+    pageState.setCsrPath(result.csr_path);
+    pageState.setCsrManagedKeyRef(result.managed_key_ref);
+    pageState.setCsrResult(result.result);
+    pageState.setCsrSource("generated");
   }
 
   return (
@@ -200,99 +265,15 @@ export function IssuePage() {
         issuerError={issuerError}
         issuerReady={issuerReady}
         onSelectIssuer={handleSelectIssuer}
-        issuanceMode={issuanceMode}
-        onModeChange={setIssuanceMode}
+        issuanceMode={pageState.issuanceMode}
+        onModeChange={pageState.setIssuanceMode}
       />
 
-      {issuanceMode === "dns" ? (
-        <IssuanceFlowContainer
-          inputComponent={
-            <>
-              <DomainsInputCard
-                domainsInput={domainsInput}
-                parsedDomains={parsedDomains}
-                issuerLabel={issuerLabel}
-                issuerEnvironment={issuerEnvironment}
-                issuerReady={issuerReady}
-                loadingStart={loadingStart}
-                hasStartResult={Boolean(startResult)}
-                providerPreview={providerPreview}
-                providerLoading={providerLoading}
-                providerError={providerError}
-                keyOption={keyOption}
-                onDomainsChange={setDomainsInput}
-                onKeyOptionChange={setKeyOption}
-                onStart={handleStart}
-                onReset={handleReset}
-                disabled={managedFlowDisabled}
-              />
-              {error && (
-                <IssuanceResultBanner error={error} successMessage={null} />
-              )}
-            </>
-          }
-          loadingStart={loadingStart}
-          startResult={startResult}
-          hasManual={hasManual}
-          hasManaged={hasManaged}
-          dnsModeLabel={dnsModeLabel}
-          manualRecords={manualRecords}
-          finalizing={finalizing}
-          awaitingManual={awaitingManual}
-          finalizeFailed={finalizeFailed}
-          certificate={certificate}
-          error={error}
-          eventState={eventState}
-          onContinue={continueIssuance}
-          onRetryFinalize={retryFinalization}
-          onIssueAnother={handleIssueAnother}
-        />
-      ) : null}
+      {pageState.issuanceMode === "dns" && <IssuanceFlowContainer {...dnsFlowProps} />}
 
-      {issuanceMode === "csr-import" ? (
-        <IssuanceFlowContainer
-          inputComponent={
-            <>
-              <CsrIssuanceCard
-                issuerLabel={issuerLabel}
-                issuerEnvironment={issuerEnvironment}
-                issuerReady={issuerReady}
-                loadingStart={csrLoadingStart}
-                hasStartResult={Boolean(csrStartResult)}
-                csrPath={csrPath}
-                csrResult={csrResult}
-                csrLoading={csrLoading}
-                csrError={csrError}
-                onSelectCsr={handleSelectCsr}
-                onClearCsr={handleClearCsr}
-                onStart={handleCsrStart}
-                onReset={resetCsrFlow}
-                disabled={csrFlowDisabled}
-              />
-              {csrFlowError && (
-                <IssuanceResultBanner error={csrFlowError} successMessage={null} />
-              )}
-            </>
-          }
-          loadingStart={csrLoadingStart}
-          startResult={csrStartResult}
-          hasManual={csrHasManual}
-          hasManaged={csrHasManaged}
-          dnsModeLabel={csrDnsModeLabel}
-          manualRecords={csrManualRecords}
-          finalizing={csrFinalizing}
-          awaitingManual={csrAwaitingManual}
-          finalizeFailed={csrFinalizeFailed}
-          certificate={csrCertificate}
-          error={csrFlowError}
-          eventState={csrEventState}
-          onContinue={continueCsrIssuance}
-          onRetryFinalize={retryCsrFinalization}
-          onIssueAnother={handleCsrIssueAnother}
-        />
-      ) : null}
+      {pageState.issuanceMode === "csr-import" && <IssuanceFlowContainer {...csrFlowProps} />}
 
-      {issuanceMode === "csr-generate" ? (
+      {pageState.issuanceMode === "csr-generate" ? (
         <CsrGenerationCard onGenerated={handleGeneratedCsr} />
       ) : null}
     </div>
