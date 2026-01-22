@@ -10,8 +10,10 @@ Users need to revoke certificates that were previously issued, either due to com
 - Add revocation tracking fields to certificate records (`revoked_at`, `revocation_reason`)
 - Implement revocation command in Rust core that communicates with the ACME issuer's revocation endpoint
 - Add "Revoke" button in certificate detail UI (only for revocable certificates)
+- Add revocation reason dropdown (ACME reasons only, no free text)
 - Track revocation state and prevent re-issuance attempts on revoked certificates
 - Support revocation only for Managed certificates with valid issuer configuration and required keys
+- Add warning dialog before deleting issuers with issued certificates
 
 ## Impact
 

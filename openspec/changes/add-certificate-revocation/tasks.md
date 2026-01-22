@@ -27,6 +27,7 @@
   - Updates certificate record with revocation metadata on success
 - [ ] 3.4 Handle revocation errors gracefully (network, CA rejection, etc.)
 - [ ] 3.5 Add revocation reason constants/enum for ACME standard reasons
+- [ ] 3.6 Validate revocation reason allowlist server-side and default to "unspecified" when missing
 
 ## 4. Backend: ACME Revocation Implementation
 
@@ -53,12 +54,14 @@
 - [ ] 7.1 Add "Revoke" button to `CertificateDetail` component alongside "Export" button
 - [ ] 7.2 Show button only when certificate is revocable (Managed source, has issuer_id, not already revoked, required keys available)
 - [ ] 7.3 Add confirmation dialog before revocation
-- [ ] 7.4 Show revocation status in certificate details when revoked
-- [ ] 7.5 Display revocation date and reason if available
-- [ ] 7.6 Disable Revoke button after successful revocation
+- [ ] 7.4 Add revocation reason dropdown (ACME reasons only, no free text) in confirmation dialog
+- [ ] 7.5 Show revocation status in certificate details when revoked
+- [ ] 7.6 Display revocation date and reason if available
+- [ ] 7.7 Disable Revoke button after successful revocation
 
 ## 8. UX Polish
 
 - [ ] 8.1 Add visual indicator for revoked certificates (badge/status)
 - [ ] 8.2 Show appropriate error messages when revocation is not possible (missing issuer, missing keys, already revoked)
 - [ ] 8.3 Ensure revocation action is clearly labeled and destructive (red button or warning styling)
+- [ ] 8.4 Add warning dialog before deleting issuers that have issued certificates

@@ -80,3 +80,16 @@ The certificate detail UI SHALL display a Revoke button for revocable certificat
 - **WHEN** a user clicks the Revoke button
 - **THEN** the UI SHALL display a confirmation dialog before proceeding with revocation
 - **AND** the revocation SHALL only proceed if the user confirms
+
+#### Scenario: Revocation reason selection
+- **WHEN** a user confirms revocation
+- **THEN** the UI SHALL provide a dropdown of ACME revocation reasons ("keyCompromise", "superseded", "cessationOfOperation", "unspecified")
+- **AND** the UI SHALL NOT allow free-text revocation reasons
+
+### Requirement: Issuer removal warning for issued certificates
+The system SHALL warn users before deleting an issuer that has issued Managed certificates.
+
+#### Scenario: Warn before deleting issuer with issued certificates
+- **WHEN** a user attempts to delete an issuer with issued Managed certificates
+- **THEN** the UI SHALL display a warning dialog before proceeding
+- **AND** deletion SHALL only proceed if the user confirms
