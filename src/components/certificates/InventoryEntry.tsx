@@ -54,9 +54,6 @@ export function InventoryEntry({ record, isSelected, onClick }: InventoryEntryPr
             Issuer · {record.issuer}
           </div>
           <div className="text-xs text-muted-foreground">
-            Serial {record.serial}
-          </div>
-          <div className="text-xs text-muted-foreground">
             Valid {formatCertificateDate(record.not_before)} – {formatCertificateDate(record.not_after)}
           </div>
         </div>

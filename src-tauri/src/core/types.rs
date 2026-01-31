@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::issuance::dns::{DnsPropagationResult, DnsRecordInstruction};
-use crate::secrets::types::SecretMetadata;
 
 /// Represents the source of a certificate record, indicating whether it was
 /// discovered externally or is managed by the application.
@@ -171,8 +170,6 @@ pub struct SetPreferenceRequest {
     pub name: String,
     pub value: String,
 }
-
-pub type SecretRefRecord = SecretMetadata;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

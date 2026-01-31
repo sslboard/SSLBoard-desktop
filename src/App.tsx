@@ -2,7 +2,7 @@ import {
   ShieldCheck,
   Wand2,
   Radar,
-  Settings as SettingsIcon,
+  KeyRound,
   Globe,
 } from "lucide-react";
 import { Navigate, Route, Routes } from "react-router-dom";
@@ -35,10 +35,10 @@ const navItems: NavItem[] = [
     icon: <Radar className="h-5 w-5" />,
   },
   {
-    label: "Settings",
-    description: "Configure providers and policies.",
+    label: "Issuers",
+    description: "Configure ACME providers and secrets.",
     to: "/settings",
-    icon: <SettingsIcon className="h-5 w-5" />,
+    icon: <KeyRound className="h-5 w-5" />,
   },
   {
     label: "DNS Providers",

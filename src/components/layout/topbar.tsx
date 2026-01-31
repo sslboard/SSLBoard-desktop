@@ -17,10 +17,10 @@ export function Topbar({
 
   return (
     <header className="sticky top-0 z-30 w-full border-b bg-card/95 px-4 backdrop-blur">
-      <div className="flex h-14 items-center justify-between gap-3">
+      <div className="flex h-16 items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <Logo variant="topbar" className="shrink-0" />
-          <nav className="flex max-w-full flex-1 items-center gap-1 overflow-x-auto text-sm">
+          <nav className="flex max-w-full flex-1 items-center gap-1 overflow-x-auto text-base">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
@@ -29,7 +29,7 @@ export function Topbar({
                 className={({ isActive }) =>
                   cn(
                     buttonVariants({ variant: "ghost", size: "sm" }),
-                    "h-8 gap-2 px-3",
+                    "h-9 gap-2 px-4",
                     isActive
                       ? "bg-muted text-foreground"
                       : "text-muted-foreground hover:bg-muted/70",
@@ -44,11 +44,11 @@ export function Topbar({
             ))}
           </nav>
         </div>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-3 text-base text-muted-foreground">
           <div className="hidden items-center gap-2 sm:flex">
             <span
               className={cn(
-                "h-2 w-2 rounded-full",
+                "h-2.5 w-2.5 rounded-full",
                 vaultUnlocked ? "bg-emerald-500" : "bg-amber-500",
               )}
             />

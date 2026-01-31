@@ -10,7 +10,7 @@ use core::commands::{
     dns_provider_create, dns_provider_delete, dns_provider_list, dns_provider_test,
     dns_provider_update, dns_resolve_provider, export_certificate_pem, generate_csr,
     get_certificate, get_preference, inspect_csr, list_certificates, list_issuers,
-    list_secret_refs, lock_vault, revoke_certificate, select_issuer, set_preference,
+    lock_vault, revoke_certificate, select_issuer, set_preference,
     start_csr_issuance, start_managed_issuance, update_issuer,
 };
 use secrets::manager::SecretManager;
@@ -58,7 +58,6 @@ pub fn run() {
             get_certificate,
             export_certificate_pem,
             revoke_certificate,
-            list_secret_refs,
             lock_vault,
             list_issuers,
             select_issuer,
